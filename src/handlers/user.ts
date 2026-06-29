@@ -4,7 +4,7 @@ import { User } from '../models/User';
 
 export const userHandler = new Composer();
 
-// Save user to DB helper
+// Save or update user in DB
 const saveUser = async (ctx: any) => {
   if (!ctx.from) return;
   try {
@@ -18,15 +18,13 @@ const saveUser = async (ctx: any) => {
       },
       { upsert: true, new: true }
     );
-  } catch (err) {
-    // silently ignore
-  }
+  } catch (_) { /* silently ignore */ }
 };
 
 userHandler.command('start', async (ctx) => {
   await saveUser(ctx);
   await ctx.reply(
-    `👋 Salom, <b>${ctx.from?.first_name ?? 'Foydalanuvchi'}</b>!\n\n🎬 Menga kino kodini yuboring va men sizga kinoni yuboraman.\n\nMasalan: <code>001</code>`,
+    `👋 Salom, <b>${ctx.from?.first_name ?? 'Foydalanuvchi'}</b>!\n\n🎬 Kino kodini yuboring va men sizga kinoni yuboraman.\n\nMasalan: <code>001</code>`,
     { parse_mode: 'HTML' }
   );
 });
@@ -42,7 +40,18 @@ userHandler.on('message:text', async (ctx) => {
       return;
     }
 
-    let caption = `🎬 <b>${movie.title}</b>`;
+    // Forward from channel if messageId and channelId exist
+    if (movie.messageId && movie.channelId) {
+      try {
+        await ctx.api.forwardMessage(ctx.chat.id, movie.channelId, movie.messageId);
+        return;
+      } catch (forwardErr) {
+        console.error('Forward failed, falling back to fileId:', forwardErr);
+      }
+    }
+
+    // Fallback: send via fileId
+    let caption = movie.title ? `🎬 <b>${movie.title}</b>` : '🎬';
     if (movie.year) caption += ` (${movie.year})`;
     if (movie.caption) caption += `\n\n${movie.caption}`;
 
