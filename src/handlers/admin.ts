@@ -21,6 +21,7 @@ type AdminState =
   | { type: 'delete_waiting_code' }
   | { type: 'broadcast_waiting_message' }
   | { type: 'sub_waiting_channel' }
+  | { type: 'sub_waiting_link'; channelId: string; title: string; defaultLink: string }
   | { type: 'settings_waiting_channel' };
 
 const adminStates = new Map<number, AdminState>();
@@ -352,20 +353,23 @@ adminHandler.on('message:text', async (ctx, next) => {
       const channelId = String(chat.id);
       const title = chat.title || chat.username || text;
       const username = chat.username;
-      const link = username
-        ? `https://t.me/${username}`
-        : `https://t.me/c/${String(chat.id).replace('-100', '')}`;
+      
+      let defaultLink = '';
+      if (username) {
+        defaultLink = `https://t.me/${username}`;
+      } else {
+        try {
+          defaultLink = await ctx.api.exportChatInviteLink(channelId);
+        } catch {
+          defaultLink = `https://t.me/c/${channelId.replace('-100', '')}`;
+        }
+      }
 
-      await SubChannel.findOneAndUpdate(
-        { channelId },
-        { channelId, title, link },
-        { upsert: true, new: true }
-      );
-
-      const { text: panelText, keyboard } = await buildSubPanel();
+      adminStates.set(userId, { type: 'sub_waiting_link', channelId, title, defaultLink });
+      
       await ctx.reply(
-        `✅ <b>${title}</b> kanali qo'shildi!\n\n` + panelText,
-        { parse_mode: 'HTML', reply_markup: keyboard }
+        `✅ <b>${title}</b> kanali topildi.\n\nFoydalanuvchilarga ushbu kanal uchun qanday silka (tugma) ko'rsatilsin?\n\nZayavka yoki maxsus silka bo'lsa, uni yuboring. Aks holda <b>/skip</b> buyrug'ini yozing (avtomatik silka o'rnatiladi).`,
+        { parse_mode: 'HTML', reply_markup: mainPanel }
       );
     } catch (err) {
       console.error(err);
@@ -373,6 +377,38 @@ adminHandler.on('message:text', async (ctx, next) => {
         '❌ Kanal topilmadi yoki bot kanalda admin emas.\n\nBotni kanalga admin qilib, qaytadan urinib ko\'ring.',
         { reply_markup: mainPanel }
       );
+    }
+    return;
+  }
+
+  // --- Subscription: waiting for link ---
+  if (state.type === 'sub_waiting_link') {
+    adminStates.delete(userId);
+    let finalLink = state.defaultLink;
+    
+    if (text !== '/skip') {
+      if (!text.startsWith('http://') && !text.startsWith('https://')) {
+        await ctx.reply('❌ Noto\'g\'ri format. Silka http yoki https bilan boshlanishi kerak. Boshqatdan urinib ko\'ring.', { reply_markup: mainPanel });
+        return;
+      }
+      finalLink = text;
+    }
+    
+    try {
+      await SubChannel.findOneAndUpdate(
+        { channelId: state.channelId },
+        { channelId: state.channelId, title: state.title, link: finalLink },
+        { upsert: true, new: true }
+      );
+
+      const { text: panelText, keyboard } = await buildSubPanel();
+      await ctx.reply(
+        `✅ <b>${state.title}</b> kanali muvaffaqiyatli qo'shildi!\n\n` + panelText,
+        { parse_mode: 'HTML', reply_markup: keyboard }
+      );
+    } catch (err) {
+      console.error(err);
+      await ctx.reply('❌ Saqlashda xatolik yuz berdi.', { reply_markup: mainPanel });
     }
     return;
   }

@@ -69,6 +69,21 @@ bot.on('channel_post:video', async (ctx) => {
   }
 });
 
+// ─── JOIN REQUEST HANDLER ───────────────────────────────────────────────────────
+bot.on('chat_join_request', async (ctx) => {
+  try {
+    await ctx.approveChatJoinRequest();
+    // Foydalanuvchiga tasdiqlanganligi haqida xabar yuborish
+    await bot.api.sendMessage(
+      ctx.from.id,
+      `✅ <b>${ctx.chat.title}</b> kanaliga so'rovingiz tasdiqlandi!\nEndi kinolarni botdan yuklab olishingiz mumkin.`,
+      { parse_mode: 'HTML' }
+    ).catch(() => {}); // Agar foydalanuvchi botni bloklagan bo'lsa e'tiborsiz qoldirish
+  } catch (err) {
+    console.error('❌ Zayavkani tasdiqlashda xatolik:', err);
+  }
+});
+
 // ─── ROUTING ──────────────────────────────────────────────────────────────────
 // Admin updates go to adminHandler, non-admins go directly to userHandler.
 // After adminHandler finishes, userHandler also runs (so admins can search movies too).
@@ -91,7 +106,7 @@ const startBot = async () => {
   console.log('🤖 Bot ishga tushmoqda...');
   await bot.start({
     drop_pending_updates: true,
-    allowed_updates: ['message', 'callback_query', 'channel_post'],
+    allowed_updates: ['message', 'callback_query', 'channel_post', 'chat_join_request'],
     onStart: () => console.log('✅ Bot muvaffaqiyatli ishga tushdi!'),
   });
 };
