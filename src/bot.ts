@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { Bot } from 'grammy';
+import { Bot, Composer } from 'grammy';
 import { connectDB } from './db';
 import { userHandler } from './handlers/user';
 import { adminHandler } from './handlers/admin';
@@ -14,15 +14,14 @@ if (!token) {
 
 const bot = new Bot(token);
 
-// ─── CHANNEL POST HANDLER ─────────────────────────────────────────────────────
-// Caption format (each line):
-//   Line 1: movie code   (required)  e.g. 001
-//   Line 2: movie title  (optional)  e.g. Inception
-//   Line 3: year         (optional)  e.g. 2010
-//   Line 4+: description (optional)
+// ─── ADMIN ID HELPER ──────────────────────────────────────────────────────────
+const getAdminIds = (): number[] => {
+  const raw = process.env.ADMIN_IDS || '';
+  return raw.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+};
 
+// ─── CHANNEL POST HANDLER ─────────────────────────────────────────────────────
 bot.on('channel_post:video', async (ctx) => {
-  // Import here to avoid circular dependency issues at module load time
   const { getChannelId } = await import('./helpers/settings');
   const configuredChannelId = await getChannelId();
 
@@ -32,7 +31,6 @@ bot.on('channel_post:video', async (ctx) => {
     ? `@${(post.chat as any).username}`
     : null;
 
-  // Only process from the configured channel
   if (configuredChannelId) {
     const matchById = String(chatId) === configuredChannelId;
     const matchByUsername = chatUsername === configuredChannelId;
@@ -45,7 +43,6 @@ bot.on('channel_post:video', async (ctx) => {
 
   const code = lines[0];
   const title = lines[1] || undefined;
-
   let year: number | undefined;
   let descLines: string[] = [];
 
@@ -66,14 +63,21 @@ bot.on('channel_post:video', async (ctx) => {
       { code, title, year, caption, fileId, messageId, channelId: chatId },
       { upsert: true, new: true }
     );
-    console.log(`✅ Kanal postidan kino saqlandi: [${code}] ${title ?? '—'}`);
+    console.log(`✅ Kino saqlandi: [${code}] ${title ?? '—'}`);
   } catch (err) {
     console.error('❌ Kino saqlashda xatolik:', err);
   }
 });
 
-// ─── HANDLERS ─────────────────────────────────────────────────────────────────
-bot.use(adminHandler);
+// ─── ROUTING ──────────────────────────────────────────────────────────────────
+// Admin updates go to adminHandler, non-admins go directly to userHandler.
+// After adminHandler finishes, userHandler also runs (so admins can search movies too).
+
+bot.filter(
+  (ctx) => ctx.from !== undefined && getAdminIds().includes(ctx.from.id),
+  adminHandler
+);
+
 bot.use(userHandler);
 
 // ─── ERROR HANDLER ────────────────────────────────────────────────────────────

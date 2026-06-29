@@ -14,10 +14,6 @@ const getAdminIds = (): number[] => {
 };
 const isAdmin = (userId: number) => getAdminIds().includes(userId);
 
-// Silently ignore non-admins
-adminHandler.use(async (ctx, next) => {
-  if (ctx.from && isAdmin(ctx.from.id)) await next();
-});
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 type AdminState =
