@@ -72,7 +72,7 @@ bot.on('channel_post:video', async (ctx) => {
 // ─── JOIN REQUEST HANDLER ───────────────────────────────────────────────────────
 bot.on('chat_join_request', async (ctx) => {
   try {
-    await ctx.approveChatJoinRequest();
+    await ctx.approveChatJoinRequest(ctx.from.id);
     // Foydalanuvchiga tasdiqlanganligi haqida xabar yuborish
     await bot.api.sendMessage(
       ctx.from.id,
