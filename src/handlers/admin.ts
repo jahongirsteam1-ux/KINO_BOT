@@ -3,7 +3,7 @@ import { Movie } from '../models/Movie';
 import { User } from '../models/User';
 import { SubChannel } from '../models/SubChannel';
 import { Settings } from '../models/Settings';
-import { getChannelId } from '../bot';
+import { getChannelId } from '../helpers/settings';
 
 export const adminHandler = new Composer();
 
