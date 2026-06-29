@@ -22,6 +22,7 @@ type AdminState =
   | { type: 'broadcast_waiting_message' }
   | { type: 'sub_waiting_channel' }
   | { type: 'sub_waiting_link'; channelId: string; title: string; defaultLink: string }
+  | { type: 'sub_waiting_check'; channelId: string; title: string; link: string }
   | { type: 'settings_waiting_channel' };
 
 const adminStates = new Map<number, AdminState>();
@@ -222,6 +223,35 @@ adminHandler.callbackQuery('admin:sub_add', async (ctx) => {
   );
 });
 
+adminHandler.callbackQuery(/^admin:sub_check:(yes|no)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const userId = ctx.from.id;
+  const state = adminStates.get(userId);
+  if (state?.type !== 'sub_waiting_check') {
+    await ctx.editMessageText('❌ Amaliyot muddati tugagan.', { reply_markup: backBtn });
+    return;
+  }
+  adminStates.delete(userId);
+
+  const skipCheck = ctx.match[1] === 'no';
+  try {
+    await SubChannel.findOneAndUpdate(
+      { channelId: state.channelId },
+      { channelId: state.channelId, title: state.title, link: state.link, skipCheck },
+      { upsert: true, new: true }
+    );
+
+    const { text: panelText, keyboard } = await buildSubPanel();
+    await ctx.editMessageText(
+      `✅ <b>${state.title}</b> kanali/boti muvaffaqiyatli qo'shildi!\n\n` + panelText,
+      { parse_mode: 'HTML', reply_markup: keyboard }
+    );
+  } catch (err) {
+    console.error(err);
+    await ctx.editMessageText('❌ Saqlashda xatolik yuz berdi.');
+  }
+});
+
 adminHandler.callbackQuery(/^admin:sub_remove:(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const mongoId = ctx.match[1];
@@ -394,22 +424,16 @@ adminHandler.on('message:text', async (ctx, next) => {
       finalLink = text;
     }
     
-    try {
-      await SubChannel.findOneAndUpdate(
-        { channelId: state.channelId },
-        { channelId: state.channelId, title: state.title, link: finalLink },
-        { upsert: true, new: true }
-      );
+    adminStates.set(userId, { type: 'sub_waiting_check', channelId: state.channelId, title: state.title, link: finalLink });
+    
+    const kb = new InlineKeyboard()
+      .text('✅ Ha (Qat\'iy tekshirish)', 'admin:sub_check:yes').row()
+      .text('❌ Yo\'q (Faqat silkani bosish kifoya)', 'admin:sub_check:no');
 
-      const { text: panelText, keyboard } = await buildSubPanel();
-      await ctx.reply(
-        `✅ <b>${state.title}</b> kanali muvaffaqiyatli qo'shildi!\n\n` + panelText,
-        { parse_mode: 'HTML', reply_markup: keyboard }
-      );
-    } catch (err) {
-      console.error(err);
-      await ctx.reply('❌ Saqlashda xatolik yuz berdi.', { reply_markup: mainPanel });
-    }
+    await ctx.reply(
+      `❓ <b>${state.title}</b> bot/kanaliga a'zolik qat'iy tekshirilsinmi?\n\n(Agar bu BOT bo'lsa, "Yo'q" tugmasini bosing, chunki bot obunasini Telegram orqali tekshirib bo'lmaydi!)`,
+      { parse_mode: 'HTML', reply_markup: kb }
+    );
     return;
   }
 

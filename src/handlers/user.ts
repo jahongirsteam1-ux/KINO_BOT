@@ -28,8 +28,18 @@ const checkSubscriptions = async (ctx: any, userId: number): Promise<ISubChannel
   const channels = await SubChannel.find();
   if (channels.length === 0) return [];
 
+  const userDoc = await User.findOne({ telegramId: userId });
+  const passedChannels = userDoc?.passedChannels || [];
+
   const notSubscribed: ISubChannel[] = [];
   for (const channel of channels) {
+    if (channel.skipCheck) {
+      if (!passedChannels.includes(channel.channelId)) {
+        notSubscribed.push(channel);
+      }
+      continue;
+    }
+
     try {
       const member = await ctx.api.getChatMember(channel.channelId, userId);
       if (['left', 'kicked'].includes(member.status)) {
@@ -78,6 +88,16 @@ userHandler.command('start', async (ctx) => {
 userHandler.callbackQuery('check:subscription', async (ctx) => {
   await ctx.answerCallbackQuery('Tekshirilmoqda...');
   const userId = ctx.from.id;
+
+  // Mark skipCheck channels as passed when the user clicks the check button
+  const dummyChannels = await SubChannel.find({ skipCheck: true });
+  if (dummyChannels.length > 0) {
+    const channelIds = dummyChannels.map(c => c.channelId);
+    await User.findOneAndUpdate(
+      { telegramId: userId },
+      { $addToSet: { passedChannels: { $each: channelIds } } }
+    );
+  }
 
   const notSubscribed = await checkSubscriptions(ctx, userId);
 
