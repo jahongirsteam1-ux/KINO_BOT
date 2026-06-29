@@ -42,7 +42,7 @@ const mainPanel = new InlineKeyboard()
 const backBtn = new InlineKeyboard().text('🔙 Orqaga', 'admin:back');
 
 // ─── /panel ───────────────────────────────────────────────────────────────────
-adminHandler.command('panel', async (ctx) => {
+adminHandler.command('admin', async (ctx) => {
   adminStates.delete(ctx.from!.id);
   await ctx.reply('🎛 <b>Admin Panel</b>\n\nAmal tanlang:', {
     parse_mode: 'HTML',
