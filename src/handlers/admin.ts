@@ -156,7 +156,7 @@ adminHandler.callbackQuery('admin:settings_set_channel', async (ctx) => {
   await ctx.answerCallbackQuery();
   adminStates.set(ctx.from.id, { type: 'settings_waiting_channel' });
   await ctx.editMessageText(
-    '📡 <b>Kino kanalini ulash</b>\n\nKanal username yoki ID sini yuboring:\n\n📌 Misol:\n<code>@mening_kino_kanal</code>\n<code>-1001234567890</code>\n\n⚠️ Bot shu kanalda <b>admin</b> bo\'lishi shart!\n\n❌ Bekor qilish uchun /admin yozing',
+    '📡 <b>Kino kanalini ulash</b>\n\nKanal username yoki ID sini yuboring:\n\n📌 Misol:\n<code>@mening_kino_kanal</code>\n<code>-1001234567890</code>\n\n⚠️ Agar kanal yopiq (private) bo\'lsa, uning ID sini kiritishingiz kerak. ID ni bilish uchun kanal xabarini @userinfobot ga yuboring.\n\n❌ Diqqat: Invite link (https://t.me/...) qabul qilinmaydi!\n\n⚠️ Bot shu kanalda <b>admin</b> bo\'lishi shart!\n\n❌ Bekor qilish uchun /admin yozing',
     { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔙 Orqaga', 'admin:back') }
   );
 });
@@ -216,7 +216,7 @@ adminHandler.callbackQuery('admin:sub_add', async (ctx) => {
   await ctx.answerCallbackQuery();
   adminStates.set(ctx.from.id, { type: 'sub_waiting_channel' });
   await ctx.editMessageText(
-    '🔒 <b>Kanal qo\'shish</b>\n\nKanal username\'ini yuboring:\n\n📌 Misol: <code>@mening_kanalim</code>\n\n⚠️ Bot shu kanalda <b>admin</b> bo\'lishi shart!\n\n❌ Bekor qilish uchun /admin yozing',
+    '🔒 <b>Kanal qo\'shish</b>\n\nKanal username yoki ID sini yuboring:\n\n📌 Misol:\n<code>@mening_kanalim</code>\n<code>-1001234567890</code>\n\n⚠️ Agar kanal yopiq bo\'lsa, ID sini kiritishingiz kerak. ID ni bilish uchun kanal xabarini @userinfobot ga yuboring.\n\n❌ Diqqat: Invite link (https://t.me/...) qabul qilinmaydi!\n\n⚠️ Bot shu kanalda <b>admin</b> bo\'lishi shart!\n\n❌ Bekor qilish uchun /admin yozing',
     { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔙 Orqaga', 'admin:back') }
   );
 });
@@ -307,6 +307,12 @@ adminHandler.on('message:text', async (ctx, next) => {
   // --- Settings: waiting for channel ---
   if (state.type === 'settings_waiting_channel') {
     adminStates.delete(userId);
+    
+    if (text.includes('t.me/')) {
+      await ctx.reply('❌ Noto\'g\'ri format. Iltimos, kanal <b>username</b> (<code>@kanal</code>) yoki <b>ID</b> (<code>-100...</code>) sini yuboring.\n\nInvite link (ssilka) qabul qilinmaydi. Yopiq kanal ID sini bilish uchun kanaldagi biror xabarni @userinfobot ga yuborib ko\'ring.', { parse_mode: 'HTML', reply_markup: mainPanel });
+      return;
+    }
+
     try {
       const chat = await ctx.api.getChat(text) as any;
       const channelId = String(chat.id);
@@ -335,6 +341,12 @@ adminHandler.on('message:text', async (ctx, next) => {
   // --- Subscription: waiting for channel ---
   if (state.type === 'sub_waiting_channel') {
     adminStates.delete(userId);
+
+    if (text.includes('t.me/')) {
+      await ctx.reply('❌ Noto\'g\'ri format. Iltimos, kanal <b>username</b> (<code>@kanal</code>) yoki <b>ID</b> (<code>-100...</code>) sini yuboring.\n\nInvite link (ssilka) qabul qilinmaydi. Yopiq kanal ID sini bilish uchun kanaldagi biror xabarni @userinfobot ga yuborib ko\'ring.', { parse_mode: 'HTML', reply_markup: mainPanel });
+      return;
+    }
+
     try {
       const chat = await ctx.api.getChat(text) as any;
       const channelId = String(chat.id);
