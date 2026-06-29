@@ -1,133 +1,263 @@
 import { Composer, InlineKeyboard } from 'grammy';
 import { Movie } from '../models/Movie';
+import { User } from '../models/User';
 
 export const adminHandler = new Composer();
 
-// Helper to check if a user is an admin
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+
 const getAdminIds = (): number[] => {
   const adminIdsStr = process.env.ADMIN_IDS || '';
   return adminIdsStr.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
 };
 
-const isAdmin = (userId: number): boolean => {
-  return getAdminIds().includes(userId);
-};
+const isAdmin = (userId: number): boolean => getAdminIds().includes(userId);
 
-// Middleware to silently ignore non-admins
+// Admin middleware — non-admins are silently ignored
 adminHandler.use(async (ctx, next) => {
   if (ctx.from && isAdmin(ctx.from.id)) {
     await next();
   }
 });
 
-interface PendingMovie {
-  code: string;
-  title: string;
-  year?: number;
-}
+// ─── STATE MAPS ───────────────────────────────────────────────────────────────
 
-interface PendingDelete {
-  waitingCode: boolean;
-}
+type AdminState =
+  | { type: 'add_waiting_info' }
+  | { type: 'add_waiting_video'; code: string; title: string; year?: number }
+  | { type: 'delete_waiting_code' }
+  | { type: 'broadcast_waiting_message' };
 
-// In-memory Maps
-const pendingAdds = new Map<number, PendingMovie>();
-const pendingDeletes = new Map<number, PendingDelete>();
+const adminStates = new Map<number, AdminState>();
 
-// Admin Panel inline keyboard
-const adminKeyboard = new InlineKeyboard()
-  .text('➕ Kino qo\'shish', 'admin:add')
-  .text('🗑️ Kino o\'chirish', 'admin:delete')
-  .row()
-  .text('📋 Ro\'yxat', 'admin:list')
+// ─── KEYBOARDS ────────────────────────────────────────────────────────────────
+
+const mainPanel = new InlineKeyboard()
+  .text('➕ Kino qo\'shish', 'admin:add').row()
+  .text('👥 Foydalanuvchilar', 'admin:users').text('📢 Xabar yuborish', 'admin:broadcast').row()
+  .text('📋 Kinolar ro\'yxati', 'admin:list').text('🗑️ Kino o\'chirish', 'admin:delete').row()
   .text('❌ Yopish', 'admin:close');
 
-// /panel command → show admin panel
+const backBtn = new InlineKeyboard().text('🔙 Orqaga', 'admin:back');
+
+// ─── /panel COMMAND ───────────────────────────────────────────────────────────
+
 adminHandler.command('panel', async (ctx) => {
-  await ctx.reply(
-    '🎬 <b>Admin Panel</b>\n\nQuyidagi amallardan birini tanlang:',
-    { parse_mode: 'HTML', reply_markup: adminKeyboard }
-  );
+  adminStates.delete(ctx.from!.id);
+  await ctx.reply('🎛 <b>Admin Panel</b>\n\nAmal tanlang:', {
+    parse_mode: 'HTML',
+    reply_markup: mainPanel
+  });
 });
 
-// ─── CALLBACK QUERY HANDLERS ─────────────────────────────────────────────────
+// ─── CALLBACK QUERIES ─────────────────────────────────────────────────────────
 
-// ➕ Kino qo'shish tugmasi bosilganda
+// Back to main panel
+adminHandler.callbackQuery('admin:back', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  adminStates.delete(ctx.from.id);
+  await ctx.editMessageText('🎛 <b>Admin Panel</b>\n\nAmal tanlang:', {
+    parse_mode: 'HTML',
+    reply_markup: mainPanel
+  });
+});
+
+// Close panel
+adminHandler.callbackQuery('admin:close', async (ctx) => {
+  await ctx.answerCallbackQuery('Panel yopildi ✅');
+  adminStates.delete(ctx.from.id);
+  await ctx.deleteMessage();
+});
+
+// ➕ Kino qo'shish
 adminHandler.callbackQuery('admin:add', async (ctx) => {
   await ctx.answerCallbackQuery();
+  adminStates.set(ctx.from.id, { type: 'add_waiting_info' });
   await ctx.editMessageText(
-    '➕ <b>Kino qo\'shish</b>\n\nQuyidagi formatda yozing:\n<code>/add [kod] [nomi] [yil]</code>\n\nMasalan:\n<code>/add 001 Inception 2010</code>',
-    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔙 Orqaga', 'admin:back') }
+    '➕ <b>Kino qo\'shish</b>\n\nQuyidagi formatda yozing:\n<code>/add [kod] [nomi] [yil]</code>\n\n📌 Misol:\n<code>/add 001 Inception 2010</code>\n<code>/add 002 Titanic</code>',
+    { parse_mode: 'HTML', reply_markup: backBtn }
   );
 });
 
-// 🗑️ Kino o'chirish tugmasi bosilganda
-adminHandler.callbackQuery('admin:delete', async (ctx) => {
-  await ctx.answerCallbackQuery();
-  pendingDeletes.set(ctx.from.id, { waitingCode: true });
-  await ctx.editMessageText(
-    '🗑️ <b>Kino o\'chirish</b>\n\nO\'chirmoqchi bo\'lgan kinoning <b>kodini</b> yuboring:\n\nMasalan: <code>001</code>',
-    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔙 Orqaga', 'admin:back') }
-  );
-});
-
-// 📋 Ro'yxat tugmasi bosilganda
+// 📋 Kinolar ro'yxati
 adminHandler.callbackQuery('admin:list', async (ctx) => {
   await ctx.answerCallbackQuery();
   try {
     const movies = await Movie.find().sort({ addedAt: -1 }).limit(50);
     if (movies.length === 0) {
-      await ctx.editMessageText(
-        '📋 <b>Kinolar ro\'yxati</b>\n\nHech qanday kino topilmadi.',
-        { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔙 Orqaga', 'admin:back') }
-      );
+      await ctx.editMessageText('📋 <b>Kinolar ro\'yxati</b>\n\n⚠️ Hech qanday kino topilmadi.', {
+        parse_mode: 'HTML', reply_markup: backBtn
+      });
       return;
     }
-    let response = `📋 <b>Kinolar ro'yxati (${movies.length} ta):</b>\n\n`;
-    movies.forEach((movie, i) => {
-      response += `${i + 1}. <code>${movie.code}</code> — ${movie.title} ${movie.year ? `(${movie.year})` : ''}\n`;
+    let text = `📋 <b>Kinolar ro'yxati (${movies.length} ta):</b>\n\n`;
+    movies.forEach((m, i) => {
+      text += `${i + 1}. <code>${m.code}</code> — ${m.title}${m.year ? ` (${m.year})` : ''}\n`;
     });
-    await ctx.editMessageText(response, {
-      parse_mode: 'HTML',
-      reply_markup: new InlineKeyboard().text('🔙 Orqaga', 'admin:back')
-    });
-  } catch (error) {
-    console.error('Error listing movies:', error);
-    await ctx.editMessageText('❌ Ro\'yxatni olishda xatolik yuz berdi.', {
-      reply_markup: new InlineKeyboard().text('🔙 Orqaga', 'admin:back')
-    });
+    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: backBtn });
+  } catch (err) {
+    console.error(err);
+    await ctx.editMessageText('❌ Xatolik yuz berdi.', { reply_markup: backBtn });
   }
 });
 
-// 🔙 Orqaga tugmasi
-adminHandler.callbackQuery('admin:back', async (ctx) => {
+// 🗑️ Kino o'chirish
+adminHandler.callbackQuery('admin:delete', async (ctx) => {
   await ctx.answerCallbackQuery();
-  pendingDeletes.delete(ctx.from.id);
+  adminStates.set(ctx.from.id, { type: 'delete_waiting_code' });
   await ctx.editMessageText(
-    '🎬 <b>Admin Panel</b>\n\nQuyidagi amallardan birini tanlang:',
-    { parse_mode: 'HTML', reply_markup: adminKeyboard }
+    '🗑️ <b>Kino o\'chirish</b>\n\nO\'chirmoqchi bo\'lgan kinoning <b>kodini</b> yuboring:\n\n📌 Misol: <code>001</code>',
+    { parse_mode: 'HTML', reply_markup: backBtn }
   );
 });
 
-// ❌ Yopish tugmasi
-adminHandler.callbackQuery('admin:close', async (ctx) => {
-  await ctx.answerCallbackQuery('Panel yopildi.');
-  await ctx.deleteMessage();
+// 👥 Foydalanuvchilar
+adminHandler.callbackQuery('admin:users', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  try {
+    const total = await User.countDocuments();
+    const last5 = await User.find().sort({ joinedAt: -1 }).limit(5);
+
+    let text = `👥 <b>Foydalanuvchilar</b>\n\n📊 Jami: <b>${total} ta</b>\n\n🕐 <b>Oxirgi qo'shilganlar:</b>\n`;
+    last5.forEach((u, i) => {
+      const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || 'Noma\'lum';
+      const username = u.username ? ` (@${u.username})` : '';
+      text += `${i + 1}. ${name}${username}\n`;
+    });
+
+    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: backBtn });
+  } catch (err) {
+    console.error(err);
+    await ctx.editMessageText('❌ Xatolik yuz berdi.', { reply_markup: backBtn });
+  }
 });
 
-// ─── COMMAND HANDLERS ─────────────────────────────────────────────────────────
+// 📢 Xabar yuborish (broadcast)
+adminHandler.callbackQuery('admin:broadcast', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  adminStates.set(ctx.from.id, { type: 'broadcast_waiting_message' });
+  await ctx.editMessageText(
+    '📢 <b>Barcha foydalanuvchilarga xabar yuborish</b>\n\nYubormoqchi bo\'lgan xabaringizni yozing:',
+    { parse_mode: 'HTML', reply_markup: backBtn }
+  );
+});
 
-// /add [code] [title] [year(optional)]
-adminHandler.command('add', async (ctx) => {
-  const args = ctx.match;
-  if (!args) {
-    await ctx.reply('❌ Format: /add [kod] [nomi] [yil]\nMasalan: /add 001 Inception 2010');
+// ─── MESSAGE HANDLERS ─────────────────────────────────────────────────────────
+
+// Text messages from admin
+adminHandler.on('message:text', async (ctx, next) => {
+  const userId = ctx.from!.id;
+  const state = adminStates.get(userId);
+
+  // --- Pending delete ---
+  if (state?.type === 'delete_waiting_code') {
+    adminStates.delete(userId);
+    const code = ctx.message.text.trim();
+    try {
+      const result = await Movie.findOneAndDelete({ code });
+      if (result) {
+        await ctx.reply(
+          `✅ <b>${code}</b> — "<b>${result.title}</b>" o'chirildi!`,
+          { parse_mode: 'HTML', reply_markup: mainPanel }
+        );
+      } else {
+        await ctx.reply(
+          `❌ <b>${code}</b> kodli kino topilmadi.`,
+          { parse_mode: 'HTML', reply_markup: mainPanel }
+        );
+      }
+    } catch (err) {
+      console.error(err);
+      await ctx.reply('❌ Xatolik yuz berdi.');
+    }
     return;
   }
 
-  const parts = args.trim().split(/\s+/);
+  // --- Pending broadcast ---
+  if (state?.type === 'broadcast_waiting_message') {
+    adminStates.delete(userId);
+    const text = ctx.message.text;
+    const users = await User.find({}, 'telegramId');
+    let sent = 0;
+    let failed = 0;
+
+    await ctx.reply(`📤 Xabar yuborilmoqda... (${users.length} ta foydalanuvchi)`);
+
+    for (const user of users) {
+      try {
+        await ctx.api.sendMessage(user.telegramId, text);
+        sent++;
+      } catch {
+        failed++;
+      }
+      // small delay to avoid rate limiting
+      await new Promise(r => setTimeout(r, 50));
+    }
+
+    await ctx.reply(
+      `📢 <b>Broadcast yakunlandi!</b>\n\n✅ Yuborildi: ${sent} ta\n❌ Xato: ${failed} ta`,
+      { parse_mode: 'HTML', reply_markup: mainPanel }
+    );
+    return;
+  }
+
+  // --- No pending state: pass to userHandler (so admins can search movies too) ---
+  await next();
+});
+
+// Video messages from admin (for adding movie)
+adminHandler.on('message:video', async (ctx, next) => {
+  const userId = ctx.from!.id;
+  const state = adminStates.get(userId);
+
+  if (state?.type !== 'add_waiting_video') {
+    await next();
+    return;
+  }
+
+  adminStates.delete(userId);
+  const fileId = ctx.message.video.file_id;
+
+  try {
+    const movie = new Movie({
+      code: state.code,
+      fileId,
+      title: state.title,
+      year: state.year
+    });
+    await movie.save();
+
+    await ctx.reply(
+      `✅ <b>Kino qo'shildi!</b>\n\n📌 Kod: <code>${state.code}</code>\n🎬 Nomi: <b>${state.title}</b>${state.year ? `\n📅 Yil: ${state.year}` : ''}`,
+      { parse_mode: 'HTML', reply_markup: mainPanel }
+    );
+  } catch (err: any) {
+    if (err.code === 11000) {
+      await ctx.reply(
+        `❌ <b>${state.code}</b> kodi bilan kino allaqachon mavjud!`,
+        { parse_mode: 'HTML', reply_markup: mainPanel }
+      );
+    } else {
+      console.error(err);
+      await ctx.reply('❌ Saqlashda xatolik yuz berdi.');
+    }
+  }
+});
+
+// ─── /add COMMAND ─────────────────────────────────────────────────────────────
+
+adminHandler.command('add', async (ctx) => {
+  const args = ctx.match?.trim();
+  if (!args) {
+    await ctx.reply('❌ Format: <code>/add [kod] [nomi] [yil]</code>\nMasalan: <code>/add 001 Inception 2010</code>', {
+      parse_mode: 'HTML'
+    });
+    return;
+  }
+
+  const parts = args.split(/\s+/);
   if (parts.length < 2) {
-    await ctx.reply('❌ Kamida 2 ta argument kerak: kod va sarlavha.\nMasalan: /add 001 Inception');
+    await ctx.reply('❌ Kamida kod va nom kiriting.\nMasalan: <code>/add 001 Inception</code>', { parse_mode: 'HTML' });
     return;
   }
 
@@ -135,121 +265,62 @@ adminHandler.command('add', async (ctx) => {
   let year: number | undefined;
   let titleParts = parts.slice(1);
 
-  const lastPart = parts[parts.length - 1];
-  if (/^\d{4}$/.test(lastPart)) {
-    year = parseInt(lastPart);
+  const last = parts[parts.length - 1];
+  if (/^\d{4}$/.test(last)) {
+    year = parseInt(last);
     titleParts = parts.slice(1, -1);
   }
 
   const title = titleParts.join(' ');
   if (!title) {
-    await ctx.reply('❌ Sarlavha bo\'sh bo\'lishi mumkin emas.');
+    await ctx.reply('❌ Nom bo\'sh bo\'lishi mumkin emas.');
     return;
   }
 
-  pendingAdds.set(ctx.from!.id, { code, title, year });
+  adminStates.set(ctx.from!.id, { type: 'add_waiting_video', code, title, year });
   await ctx.reply(
     `✅ Ma'lumotlar qabul qilindi!\n\n📌 Kod: <code>${code}</code>\n🎬 Nomi: <b>${title}</b>${year ? `\n📅 Yil: ${year}` : ''}\n\nEndi kino videosini yuboring:`,
     { parse_mode: 'HTML' }
   );
 });
 
-// Message:text → pending delete handler
-adminHandler.on('message:text', async (ctx) => {
-  const userId = ctx.from!.id;
-  const pendingDelete = pendingDeletes.get(userId);
+// ─── /delete COMMAND ──────────────────────────────────────────────────────────
 
-  if (pendingDelete?.waitingCode) {
-    const code = ctx.message.text.trim();
-    pendingDeletes.delete(userId);
-    try {
-      const result = await Movie.findOneAndDelete({ code });
-      if (result) {
-        await ctx.reply(
-          `✅ <b>${code}</b> kodli "<b>${result.title}</b>" kino muvaffaqiyatli o'chirildi.`,
-          { parse_mode: 'HTML', reply_markup: adminKeyboard }
-        );
-      } else {
-        await ctx.reply(
-          `❌ <b>${code}</b> kodli kino topilmadi.`,
-          { parse_mode: 'HTML', reply_markup: adminKeyboard }
-        );
-      }
-    } catch (error) {
-      console.error('Error deleting movie:', error);
-      await ctx.reply('❌ Kinoni o\'chirishda xatolik yuz berdi.');
-    }
-  }
-});
-
-// Message:video → pending add handler
-adminHandler.on('message:video', async (ctx) => {
-  const userId = ctx.from!.id;
-  const pending = pendingAdds.get(userId);
-
-  if (!pending) return;
-
-  const fileId = ctx.message.video.file_id;
-
-  try {
-    const movie = new Movie({
-      code: pending.code,
-      fileId: fileId,
-      title: pending.title,
-      year: pending.year
-    });
-
-    await movie.save();
-    pendingAdds.delete(userId);
-    await ctx.reply(
-      `✅ Kino muvaffaqiyatli qo'shildi!\n\n📌 Kod: <code>${pending.code}</code>\n🎬 Nomi: <b>${pending.title}</b>${pending.year ? `\n📅 Yil: ${pending.year}` : ''}`,
-      { parse_mode: 'HTML', reply_markup: adminKeyboard }
-    );
-  } catch (error: any) {
-    if (error.code === 11000) {
-      await ctx.reply(`❌ <b>${pending.code}</b> kodi bilan kino allaqachon mavjud.`, { parse_mode: 'HTML' });
-    } else {
-      console.error('Error saving movie:', error);
-      await ctx.reply('❌ Kinoni saqlashda xatolik yuz berdi.');
-    }
-  }
-});
-
-// /delete [code]
 adminHandler.command('delete', async (ctx) => {
-  const code = ctx.match.trim();
+  const code = ctx.match?.trim();
   if (!code) {
-    await ctx.reply('❌ Format: /delete [kod]\nMasalan: /delete 001');
+    await ctx.reply('❌ Format: <code>/delete [kod]</code>\nMasalan: <code>/delete 001</code>', { parse_mode: 'HTML' });
     return;
   }
   try {
     const result = await Movie.findOneAndDelete({ code });
     if (result) {
-      await ctx.reply(`✅ <b>${code}</b> kodli kino o'chirildi.`, { parse_mode: 'HTML' });
+      await ctx.reply(`✅ <b>${code}</b> — "${result.title}" o'chirildi!`, { parse_mode: 'HTML' });
     } else {
       await ctx.reply(`❌ <b>${code}</b> kodli kino topilmadi.`, { parse_mode: 'HTML' });
     }
-  } catch (error) {
-    console.error('Error deleting movie:', error);
-    await ctx.reply('❌ Kinoni o\'chirishda xatolik yuz berdi.');
+  } catch (err) {
+    console.error(err);
+    await ctx.reply('❌ Xatolik yuz berdi.');
   }
 });
 
-// /list
+// ─── /list COMMAND ────────────────────────────────────────────────────────────
+
 adminHandler.command('list', async (ctx) => {
   try {
     const movies = await Movie.find().sort({ addedAt: -1 }).limit(50);
     if (movies.length === 0) {
-      await ctx.reply('Kino ro\'yxati bo\'sh.');
+      await ctx.reply('📋 Kinolar ro\'yxati bo\'sh.');
       return;
     }
-    let response = `📋 <b>Kinolar ro'yxati (${movies.length} ta):</b>\n\n`;
-    movies.forEach((movie, i) => {
-      response += `${i + 1}. <code>${movie.code}</code> — ${movie.title} ${movie.year ? `(${movie.year})` : ''}\n`;
+    let text = `📋 <b>Kinolar ro'yxati (${movies.length} ta):</b>\n\n`;
+    movies.forEach((m, i) => {
+      text += `${i + 1}. <code>${m.code}</code> — ${m.title}${m.year ? ` (${m.year})` : ''}\n`;
     });
-    await ctx.reply(response, { parse_mode: 'HTML' });
-  } catch (error) {
-    console.error('Error listing movies:', error);
-    await ctx.reply('❌ Ro\'yxatni olishda xatolik yuz berdi.');
+    await ctx.reply(text, { parse_mode: 'HTML' });
+  } catch (err) {
+    console.error(err);
+    await ctx.reply('❌ Xatolik yuz berdi.');
   }
 });
