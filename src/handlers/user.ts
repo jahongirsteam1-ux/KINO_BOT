@@ -1,10 +1,11 @@
-import { Composer } from 'grammy';
+import { Composer, InlineKeyboard } from 'grammy';
 import { Movie } from '../models/Movie';
 import { User } from '../models/User';
+import { SubChannel, ISubChannel } from '../models/SubChannel';
 
 export const userHandler = new Composer();
 
-// Save or update user in DB
+// ─── Save user to DB ──────────────────────────────────────────────────────────
 const saveUser = async (ctx: any) => {
   if (!ctx.from) return;
   try {
@@ -21,6 +22,41 @@ const saveUser = async (ctx: any) => {
   } catch (_) { /* silently ignore */ }
 };
 
+// ─── Check subscriptions ──────────────────────────────────────────────────────
+// Returns empty array if all subscribed, otherwise list of unsubscribed channels
+const checkSubscriptions = async (ctx: any, userId: number): Promise<ISubChannel[]> => {
+  const channels = await SubChannel.find();
+  if (channels.length === 0) return [];
+
+  const notSubscribed: ISubChannel[] = [];
+  for (const channel of channels) {
+    try {
+      const member = await ctx.api.getChatMember(channel.channelId, userId);
+      if (['left', 'kicked'].includes(member.status)) {
+        notSubscribed.push(channel);
+      }
+    } catch (_) {
+      notSubscribed.push(channel); // assume not subscribed on error
+    }
+  }
+  return notSubscribed;
+};
+
+// ─── Build "please subscribe" message ─────────────────────────────────────────
+const sendSubscribePrompt = async (ctx: any, channels: ISubChannel[]) => {
+  const keyboard = new InlineKeyboard();
+  channels.forEach(ch => {
+    keyboard.url(`📢 ${ch.title}`, ch.link).row();
+  });
+  keyboard.text('✅ Obuna bo\'ldim, tekshir!', 'check:subscription');
+
+  await ctx.reply(
+    '⚠️ <b>Kinoni olish uchun quyidagi kanallarga obuna bo\'lishingiz kerak:</b>\n\nObuna bo\'lgandan so\'ng <b>✅ Obuna bo\'ldim, tekshir!</b> tugmasini bosing.',
+    { parse_mode: 'HTML', reply_markup: keyboard }
+  );
+};
+
+// ─── /start ───────────────────────────────────────────────────────────────────
 userHandler.command('start', async (ctx) => {
   await saveUser(ctx);
   await ctx.reply(
@@ -29,18 +65,55 @@ userHandler.command('start', async (ctx) => {
   );
 });
 
+// ─── Check subscription callback ─────────────────────────────────────────────
+userHandler.callbackQuery('check:subscription', async (ctx) => {
+  await ctx.answerCallbackQuery('Tekshirilmoqda...');
+  const userId = ctx.from.id;
+
+  const notSubscribed = await checkSubscriptions(ctx, userId);
+
+  if (notSubscribed.length === 0) {
+    await ctx.editMessageText(
+      '✅ <b>Rahmat! Siz barcha kanallarga obuna bo\'ldingiz.</b>\n\nEndi kino kodini yuboring:',
+      { parse_mode: 'HTML' }
+    );
+  } else {
+    // Still not subscribed — rebuild prompt
+    const keyboard = new InlineKeyboard();
+    notSubscribed.forEach(ch => {
+      keyboard.url(`📢 ${ch.title}`, ch.link).row();
+    });
+    keyboard.text('✅ Obuna bo\'ldim, tekshir!', 'check:subscription');
+
+    await ctx.editMessageText(
+      '❌ <b>Siz hali quyidagi kanallarga obuna bo\'lmadingiz:</b>\n\nIltimos, barcha kanallarga obuna bo\'ling va qaytadan tekshiring.',
+      { parse_mode: 'HTML', reply_markup: keyboard }
+    );
+  }
+});
+
+// ─── Movie search (message:text) ─────────────────────────────────────────────
 userHandler.on('message:text', async (ctx) => {
   await saveUser(ctx);
   const code = ctx.message.text.trim();
+  const userId = ctx.from!.id;
 
   try {
+    // 1. Check subscriptions first
+    const notSubscribed = await checkSubscriptions(ctx, userId);
+    if (notSubscribed.length > 0) {
+      await sendSubscribePrompt(ctx, notSubscribed);
+      return;
+    }
+
+    // 2. Find movie
     const movie = await Movie.findOne({ code });
     if (!movie) {
       await ctx.reply('❌ Bu kodda kino topilmadi.');
       return;
     }
 
-    // Forward from channel if messageId and channelId exist
+    // 3. Forward from channel if possible
     if (movie.messageId && movie.channelId) {
       try {
         await ctx.api.forwardMessage(ctx.chat.id, movie.channelId, movie.messageId);
@@ -50,7 +123,7 @@ userHandler.on('message:text', async (ctx) => {
       }
     }
 
-    // Fallback: send via fileId
+    // 4. Fallback: send via fileId
     let caption = movie.title ? `🎬 <b>${movie.title}</b>` : '🎬';
     if (movie.year) caption += ` (${movie.year})`;
     if (movie.caption) caption += `\n\n${movie.caption}`;
