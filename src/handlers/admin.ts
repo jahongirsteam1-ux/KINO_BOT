@@ -1,4 +1,4 @@
-import { Composer, InlineKeyboard } from 'grammy';
+import { Composer, InlineKeyboard, Keyboard } from 'grammy';
 import { Movie } from '../models/Movie';
 import { User } from '../models/User';
 import { SubChannel } from '../models/SubChannel';
@@ -21,7 +21,6 @@ adminHandler.use(async (ctx, next) => {
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 type AdminState =
-  | { type: 'add_waiting_info' }
   | { type: 'add_waiting_video'; code: string; title?: string; year?: number }
   | { type: 'delete_waiting_code' }
   | { type: 'broadcast_waiting_message' }
@@ -31,86 +30,38 @@ type AdminState =
 const adminStates = new Map<number, AdminState>();
 
 // ─── KEYBOARDS ────────────────────────────────────────────────────────────────
-const mainPanel = new InlineKeyboard()
-  .text('➕ Kino qo\'shish', 'admin:add').row()
-  .text('👥 Foydalanuvchilar', 'admin:users').text('📢 Xabar yuborish', 'admin:broadcast').row()
-  .text('📋 Kinolar ro\'yxati', 'admin:list').text('🗑️ Kino o\'chirish', 'admin:delete').row()
-  .text('🔒 Majburiy obuna', 'admin:subscriptions').row()
-  .text('⚙️ Sozlamalar', 'admin:settings').row()
-  .text('❌ Yopish', 'admin:close');
+
+// Bottom reply keyboard
+const mainPanel = new Keyboard()
+  .text('➕ Kino qo\'shish').row()
+  .text('👥 Foydalanuvchilar').text('📢 Xabar yuborish').row()
+  .text('📋 Kinolar ro\'yxati').text('🗑️ Kino o\'chirish').row()
+  .text('🔒 Majburiy obuna').row()
+  .text('⚙️ Sozlamalar').text('❌ Panelni yopish')
+  .resized()
+  .persistent();
 
 const backBtn = new InlineKeyboard().text('🔙 Orqaga', 'admin:back');
 
-// ─── /panel ───────────────────────────────────────────────────────────────────
+// ─── /admin ───────────────────────────────────────────────────────────────────
 adminHandler.command('admin', async (ctx) => {
   adminStates.delete(ctx.from!.id);
-  await ctx.reply('🎛 <b>Admin Panel</b>\n\nAmal tanlang:', {
+  await ctx.reply('🎛 <b>Admin Panel</b>\n\nQuyidagi tugmalardan birini tanlang:', {
     parse_mode: 'HTML',
     reply_markup: mainPanel
   });
 });
 
-// ─── CALLBACKS ────────────────────────────────────────────────────────────────
+// ─── REPLY KEYBOARD BUTTON HANDLERS ──────────────────────────────────────────
 
-adminHandler.callbackQuery('admin:back', async (ctx) => {
-  await ctx.answerCallbackQuery();
-  adminStates.delete(ctx.from.id);
-  await ctx.editMessageText('🎛 <b>Admin Panel</b>\n\nAmal tanlang:', {
-    parse_mode: 'HTML', reply_markup: mainPanel
-  });
-});
-
-adminHandler.callbackQuery('admin:close', async (ctx) => {
-  await ctx.answerCallbackQuery('Panel yopildi ✅');
-  adminStates.delete(ctx.from.id);
-  await ctx.deleteMessage();
-});
-
-// ➕ Kino qo'shish
-adminHandler.callbackQuery('admin:add', async (ctx) => {
-  await ctx.answerCallbackQuery();
-  adminStates.set(ctx.from.id, { type: 'add_waiting_info' });
-  await ctx.editMessageText(
+const handleAddButton = async (ctx: any) => {
+  await ctx.reply(
     '➕ <b>Kino qo\'shish</b>\n\nQuyidagi formatda yozing:\n<code>/add [kod] [nomi] [yil]</code>\n\n📌 Misol:\n<code>/add 001 Inception 2010</code>\n<code>/add 002</code> (nomi va yilsiz ham bo\'ladi)',
-    { parse_mode: 'HTML', reply_markup: backBtn }
+    { parse_mode: 'HTML' }
   );
-});
+};
 
-// 📋 Kinolar ro'yxati
-adminHandler.callbackQuery('admin:list', async (ctx) => {
-  await ctx.answerCallbackQuery();
-  try {
-    const movies = await Movie.find().sort({ addedAt: -1 }).limit(50);
-    if (movies.length === 0) {
-      await ctx.editMessageText('📋 <b>Kinolar ro\'yxati</b>\n\n⚠️ Hech qanday kino topilmadi.', {
-        parse_mode: 'HTML', reply_markup: backBtn
-      });
-      return;
-    }
-    let text = `📋 <b>Kinolar ro'yxati (${movies.length} ta):</b>\n\n`;
-    movies.forEach((m, i) => {
-      text += `${i + 1}. <code>${m.code}</code> — ${m.title ?? '—'}${m.year ? ` (${m.year})` : ''}\n`;
-    });
-    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: backBtn });
-  } catch (err) {
-    console.error(err);
-    await ctx.editMessageText('❌ Xatolik yuz berdi.', { reply_markup: backBtn });
-  }
-});
-
-// 🗑️ Kino o'chirish
-adminHandler.callbackQuery('admin:delete', async (ctx) => {
-  await ctx.answerCallbackQuery();
-  adminStates.set(ctx.from.id, { type: 'delete_waiting_code' });
-  await ctx.editMessageText(
-    '🗑️ <b>Kino o\'chirish</b>\n\nO\'chirmoqchi bo\'lgan kinoning kodini yuboring:\n\n📌 Misol: <code>001</code>',
-    { parse_mode: 'HTML', reply_markup: backBtn }
-  );
-});
-
-// 👥 Foydalanuvchilar
-adminHandler.callbackQuery('admin:users', async (ctx) => {
-  await ctx.answerCallbackQuery();
+const handleUsersButton = async (ctx: any) => {
   try {
     const total = await User.countDocuments();
     const last5 = await User.find().sort({ joinedAt: -1 }).limit(5);
@@ -120,53 +71,97 @@ adminHandler.callbackQuery('admin:users', async (ctx) => {
       const uname = u.username ? ` (@${u.username})` : '';
       text += `${i + 1}. ${name}${uname}\n`;
     });
-    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: backBtn });
+    await ctx.reply(text, { parse_mode: 'HTML' });
   } catch (err) {
     console.error(err);
-    await ctx.editMessageText('❌ Xatolik yuz berdi.', { reply_markup: backBtn });
+    await ctx.reply('❌ Xatolik yuz berdi.');
   }
-});
+};
 
-// 📢 Broadcast
-adminHandler.callbackQuery('admin:broadcast', async (ctx) => {
-  await ctx.answerCallbackQuery();
+const handleBroadcastButton = async (ctx: any) => {
   adminStates.set(ctx.from.id, { type: 'broadcast_waiting_message' });
-  await ctx.editMessageText(
-    '📢 <b>Barcha foydalanuvchilarga xabar yuborish</b>\n\nYubormoqchi bo\'lgan xabaringizni yozing:',
-    { parse_mode: 'HTML', reply_markup: backBtn }
+  await ctx.reply(
+    '📢 <b>Barcha foydalanuvchilarga xabar yuborish</b>\n\nYubormoqchi bo\'lgan xabaringizni yozing:\n\n❌ Bekor qilish uchun /admin yozing',
+    { parse_mode: 'HTML' }
   );
-});
+};
 
-// ─── ⚙️ SOZLAMALAR ──────────────────────────────────────────────────────────────
+const handleListButton = async (ctx: any) => {
+  try {
+    const movies = await Movie.find().sort({ addedAt: -1 }).limit(50);
+    if (movies.length === 0) {
+      await ctx.reply('📋 Kinolar ro\'yxati bo\'sh.');
+      return;
+    }
+    let text = `📋 <b>Kinolar ro'yxati (${movies.length} ta):</b>\n\n`;
+    movies.forEach((m: any, i: number) => {
+      text += `${i + 1}. <code>${m.code}</code> — ${m.title ?? '—'}${m.year ? ` (${m.year})` : ''}\n`;
+    });
+    await ctx.reply(text, { parse_mode: 'HTML' });
+  } catch (err) {
+    console.error(err);
+    await ctx.reply('❌ Xatolik yuz berdi.');
+  }
+};
 
-adminHandler.callbackQuery('admin:settings', async (ctx) => {
-  await ctx.answerCallbackQuery();
+const handleDeleteButton = async (ctx: any) => {
+  adminStates.set(ctx.from.id, { type: 'delete_waiting_code' });
+  await ctx.reply(
+    '🗑️ <b>Kino o\'chirish</b>\n\nO\'chirmoqchi bo\'lgan kinoning kodini yuboring:\n\n📌 Misol: <code>001</code>\n\n❌ Bekor qilish uchun /admin yozing',
+    { parse_mode: 'HTML' }
+  );
+};
+
+const handleSubButton = async (ctx: any) => {
+  const { text, keyboard } = await buildSubPanel();
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: keyboard });
+};
+
+const handleSettingsButton = async (ctx: any) => {
   const currentChannelId = await getChannelId();
-
   const keyboard = new InlineKeyboard()
     .text('📡 Kanal ulash / o\'zgartirish', 'admin:settings_set_channel').row();
-
   if (currentChannelId) {
     keyboard.text('🗑️ Kanalni o\'chirish', 'admin:settings_remove_channel').row();
   }
-  keyboard.text('🔙 Orqaga', 'admin:back');
 
   const channelText = currentChannelId
     ? `✅ Ulangan kanal: <code>${currentChannelId}</code>`
     : '⚠️ Hech qanday kanal ulanmagan.';
 
-  await ctx.editMessageText(
+  await ctx.reply(
     `⚙️ <b>Sozlamalar</b>\n\n📡 <b>Kino kanali:</b>\n${channelText}\n\nKinolar shu kanaldan forward qilinadi.`,
     { parse_mode: 'HTML', reply_markup: keyboard }
   );
+};
+
+const handleCloseButton = async (ctx: any) => {
+  adminStates.delete(ctx.from.id);
+  await ctx.reply('✅ Panel yopildi.', {
+    reply_markup: { remove_keyboard: true }
+  });
+};
+
+// ─── CALLBACK QUERIES ─────────────────────────────────────────────────────────
+
+adminHandler.callbackQuery('admin:back', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  adminStates.delete(ctx.from.id);
+  await ctx.deleteMessage();
+  await ctx.reply('🎛 <b>Admin Panel</b>\n\nQuyidagi tugmalardan birini tanlang:', {
+    parse_mode: 'HTML',
+    reply_markup: mainPanel
+  });
 });
+
+// ─── ⚙️ SOZLAMALAR CALLBACKS ──────────────────────────────────────────────────
 
 adminHandler.callbackQuery('admin:settings_set_channel', async (ctx) => {
   await ctx.answerCallbackQuery();
   adminStates.set(ctx.from.id, { type: 'settings_waiting_channel' });
   await ctx.editMessageText(
-    '📡 <b>Kino kanalini ulash</b>\n\nKanal username yoki ID sini yuboring:\n\n📌 Misol:\n<code>@mening_kino_kanal</code>\n<code>-1001234567890</code>\n\n⚠️ Bot shu kanalda <b>admin</b> bo\'lishi shart!',
-    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔙 Orqaga', 'admin:settings') }
+    '📡 <b>Kino kanalini ulash</b>\n\nKanal username yoki ID sini yuboring:\n\n📌 Misol:\n<code>@mening_kino_kanal</code>\n<code>-1001234567890</code>\n\n⚠️ Bot shu kanalda <b>admin</b> bo\'lishi shart!\n\n❌ Bekor qilish uchun /admin yozing',
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔙 Orqaga', 'admin:back') }
   );
 });
 
@@ -175,8 +170,13 @@ adminHandler.callbackQuery('admin:settings_remove_channel', async (ctx) => {
   try {
     await Settings.deleteOne({ key: 'channel_id' });
     await ctx.editMessageText(
-      '✅ Kanal muvaffaqiyatli o\'chirildi.\n\n⚙️ <b>Sozlamalar</b>\n\n📡 Kino kanali: ⚠️ Hech qanday kanal ulanmagan.',
-      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('📡 Kanal ulash', 'admin:settings_set_channel').row().text('🔙 Orqaga', 'admin:back') }
+      '✅ Kanal o\'chirildi.\n\n⚙️ <b>Sozlamalar</b>\n\n📡 Kino kanali: ⚠️ Hech qanday kanal ulanmagan.',
+      {
+        parse_mode: 'HTML',
+        reply_markup: new InlineKeyboard()
+          .text('📡 Kanal ulash', 'admin:settings_set_channel').row()
+          .text('🔙 Orqaga', 'admin:back')
+      }
     );
   } catch (err) {
     console.error(err);
@@ -186,7 +186,6 @@ adminHandler.callbackQuery('admin:settings_remove_channel', async (ctx) => {
 
 // ─── 🔒 MAJBURIY OBUNA ────────────────────────────────────────────────────────
 
-// Build subscription management panel dynamically
 const buildSubPanel = async () => {
   const channels = await SubChannel.find().sort({ addedAt: -1 });
   const keyboard = new InlineKeyboard();
@@ -203,8 +202,6 @@ const buildSubPanel = async () => {
     keyboard.text('➕ Kanal qo\'shish', 'admin:sub_add').row();
   }
 
-  keyboard.text('🔙 Orqaga', 'admin:back');
-
   let text = `🔒 <b>Majburiy obuna kanallari</b>\n\n`;
   if (channels.length === 0) {
     text += '⚠️ Hozircha hech qanday kanal qo\'shilmagan.';
@@ -219,22 +216,15 @@ const buildSubPanel = async () => {
   return { text, keyboard };
 };
 
-adminHandler.callbackQuery('admin:subscriptions', async (ctx) => {
-  await ctx.answerCallbackQuery();
-  const { text, keyboard } = await buildSubPanel();
-  await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: keyboard });
-});
-
 adminHandler.callbackQuery('admin:sub_add', async (ctx) => {
   await ctx.answerCallbackQuery();
   adminStates.set(ctx.from.id, { type: 'sub_waiting_channel' });
   await ctx.editMessageText(
-    '🔒 <b>Kanal qo\'shish</b>\n\nKanal username\'ini yuboring:\n\n📌 Misol: <code>@mening_kanalim</code>\n\n⚠️ Bot shu kanalda <b>admin</b> bo\'lishi shart!',
-    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔙 Orqaga', 'admin:subscriptions') }
+    '🔒 <b>Kanal qo\'shish</b>\n\nKanal username\'ini yuboring:\n\n📌 Misol: <code>@mening_kanalim</code>\n\n⚠️ Bot shu kanalda <b>admin</b> bo\'lishi shart!\n\n❌ Bekor qilish uchun /admin yozing',
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔙 Orqaga', 'admin:back') }
   );
 });
 
-// Remove subscription channel callback
 adminHandler.callbackQuery(/^admin:sub_remove:(.+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const mongoId = ctx.match[1];
@@ -253,15 +243,32 @@ adminHandler.callbackQuery(/^admin:sub_remove:(.+)$/, async (ctx) => {
   }
 });
 
-// ─── MESSAGE HANDLERS ─────────────────────────────────────────────────────────
+// ─── TEXT MESSAGE HANDLER ─────────────────────────────────────────────────────
 adminHandler.on('message:text', async (ctx, next) => {
   const userId = ctx.from!.id;
+  const text = ctx.message.text.trim();
   const state = adminStates.get(userId);
 
+  // --- Bottom keyboard button presses ---
+  if (!state) {
+    if (text === '➕ Kino qo\'shish')       { await handleAddButton(ctx); return; }
+    if (text === '👥 Foydalanuvchilar')      { await handleUsersButton(ctx); return; }
+    if (text === '📢 Xabar yuborish')        { await handleBroadcastButton(ctx); return; }
+    if (text === '📋 Kinolar ro\'yxati')     { await handleListButton(ctx); return; }
+    if (text === '🗑️ Kino o\'chirish')       { await handleDeleteButton(ctx); return; }
+    if (text === '🔒 Majburiy obuna')        { await handleSubButton(ctx); return; }
+    if (text === '⚙️ Sozlamalar')            { await handleSettingsButton(ctx); return; }
+    if (text === '❌ Panelni yopish')        { await handleCloseButton(ctx); return; }
+
+    // No button match and no state — pass to userHandler
+    await next();
+    return;
+  }
+
   // --- Delete: waiting for code ---
-  if (state?.type === 'delete_waiting_code') {
+  if (state.type === 'delete_waiting_code') {
     adminStates.delete(userId);
-    const code = ctx.message.text.trim();
+    const code = text;
     try {
       const result = await Movie.findOneAndDelete({ code });
       if (result) {
@@ -275,15 +282,14 @@ adminHandler.on('message:text', async (ctx, next) => {
       }
     } catch (err) {
       console.error(err);
-      await ctx.reply('❌ Xatolik yuz berdi.');
+      await ctx.reply('❌ Xatolik yuz berdi.', { reply_markup: mainPanel });
     }
     return;
   }
 
   // --- Broadcast: waiting for message ---
-  if (state?.type === 'broadcast_waiting_message') {
+  if (state.type === 'broadcast_waiting_message') {
     adminStates.delete(userId);
-    const text = ctx.message.text;
     const users = await User.find({}, 'telegramId');
     let sent = 0, failed = 0;
 
@@ -302,15 +308,13 @@ adminHandler.on('message:text', async (ctx, next) => {
     return;
   }
 
-  // --- Settings: waiting for channel ID ---
-  if (state?.type === 'settings_waiting_channel') {
+  // --- Settings: waiting for channel ---
+  if (state.type === 'settings_waiting_channel') {
     adminStates.delete(userId);
-    const input = ctx.message.text.trim();
     try {
-      // Validate by calling getChat
-      const chat = await ctx.api.getChat(input) as any;
+      const chat = await ctx.api.getChat(text) as any;
       const channelId = String(chat.id);
-      const title = chat.title || chat.username || input;
+      const title = chat.title || chat.username || text;
 
       await Settings.findOneAndUpdate(
         { key: 'channel_id' },
@@ -333,24 +337,12 @@ adminHandler.on('message:text', async (ctx, next) => {
   }
 
   // --- Subscription: waiting for channel ---
-  if (state?.type === 'sub_waiting_channel') {
+  if (state.type === 'sub_waiting_channel') {
     adminStates.delete(userId);
-    const input = ctx.message.text.trim();
-
-    // Validate format
-    if (!input.startsWith('@') && !input.startsWith('-')) {
-      await ctx.reply(
-        '❌ Noto\'g\'ri format. Kanal username\'ini <code>@</code> bilan yuboring.\nMasalan: <code>@mening_kanalim</code>',
-        { parse_mode: 'HTML' }
-      );
-      return;
-    }
-
     try {
-      // Get channel info from Telegram
-      const chat = await ctx.api.getChat(input) as any;
+      const chat = await ctx.api.getChat(text) as any;
       const channelId = String(chat.id);
-      const title = chat.title || chat.username || input;
+      const title = chat.title || chat.username || text;
       const username = chat.username;
       const link = username
         ? `https://t.me/${username}`
@@ -367,7 +359,7 @@ adminHandler.on('message:text', async (ctx, next) => {
         `✅ <b>${title}</b> kanali qo'shildi!\n\n` + panelText,
         { parse_mode: 'HTML', reply_markup: keyboard }
       );
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
       await ctx.reply(
         '❌ Kanal topilmadi yoki bot kanalda admin emas.\n\nBotni kanalga admin qilib, qaytadan urinib ko\'ring.',
@@ -377,11 +369,11 @@ adminHandler.on('message:text', async (ctx, next) => {
     return;
   }
 
-  // --- No pending state: pass to userHandler ---
+  // Fallback
   await next();
 });
 
-// Video handler (for /add flow)
+// ─── VIDEO HANDLER ────────────────────────────────────────────────────────────
 adminHandler.on('message:video', async (ctx, next) => {
   const userId = ctx.from!.id;
   const state = adminStates.get(userId);
@@ -423,7 +415,7 @@ adminHandler.on('message:video', async (ctx, next) => {
 adminHandler.command('add', async (ctx) => {
   const args = ctx.match?.trim();
   if (!args) {
-    await ctx.reply('❌ Format: <code>/add [kod] [nomi(ixtiyoriy)] [yil(ixtiyoriy)]</code>', { parse_mode: 'HTML' });
+    await ctx.reply('❌ Format: <code>/add [kod] [nomi] [yil]</code>', { parse_mode: 'HTML' });
     return;
   }
 
