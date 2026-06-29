@@ -350,10 +350,6 @@ adminHandler.on('message:text', async (ctx, next) => {
 
     try {
       const chat = await ctx.api.getChat(text) as any;
-      if (chat.type === 'private') {
-        await ctx.reply('❌ Boshqa bot yoki foydalanuvchini majburiy obunaga qo\'shib bo\'lmaydi! Telegram API bunga ruxsat bermaydi. Iltimos, faqat Kanal yoki Guruh qo\'shing.', { reply_markup: mainPanel });
-        return;
-      }
       const channelId = String(chat.id);
       const title = chat.title || chat.username || text;
       const username = chat.username;
