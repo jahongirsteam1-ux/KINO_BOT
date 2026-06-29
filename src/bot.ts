@@ -85,7 +85,11 @@ bot.catch((err) => {
 const startBot = async () => {
   await connectDB();
   console.log('🤖 Bot ishga tushmoqda...');
-  bot.start();
+  await bot.start({
+    drop_pending_updates: true,
+    allowed_updates: ['message', 'callback_query', 'channel_post'],
+    onStart: () => console.log('✅ Bot muvaffaqiyatli ishga tushdi!'),
+  });
 };
 
 startBot();
