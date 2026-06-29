@@ -59,6 +59,15 @@ const sendSubscribePrompt = async (ctx: any, channels: ISubChannel[]) => {
 // ─── /start ───────────────────────────────────────────────────────────────────
 userHandler.command('start', async (ctx) => {
   await saveUser(ctx);
+  
+  const userId = ctx.from!.id;
+  const notSubscribed = await checkSubscriptions(ctx, userId);
+  
+  if (notSubscribed.length > 0) {
+    await sendSubscribePrompt(ctx, notSubscribed);
+    return;
+  }
+
   await ctx.reply(
     `👋 Salom, <b>${ctx.from?.first_name ?? 'Foydalanuvchi'}</b>!\n\n🎬 Kino kodini yuboring va men sizga kinoni yuboraman.\n\nMasalan: <code>001</code>`,
     { parse_mode: 'HTML' }
