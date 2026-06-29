@@ -2,6 +2,8 @@ import { Composer, InlineKeyboard } from 'grammy';
 import { Movie } from '../models/Movie';
 import { User } from '../models/User';
 import { SubChannel } from '../models/SubChannel';
+import { Settings } from '../models/Settings';
+import { getChannelId } from '../bot';
 
 export const adminHandler = new Composer();
 
@@ -23,7 +25,8 @@ type AdminState =
   | { type: 'add_waiting_video'; code: string; title?: string; year?: number }
   | { type: 'delete_waiting_code' }
   | { type: 'broadcast_waiting_message' }
-  | { type: 'sub_waiting_channel' };
+  | { type: 'sub_waiting_channel' }
+  | { type: 'settings_waiting_channel' };
 
 const adminStates = new Map<number, AdminState>();
 
@@ -33,6 +36,7 @@ const mainPanel = new InlineKeyboard()
   .text('👥 Foydalanuvchilar', 'admin:users').text('📢 Xabar yuborish', 'admin:broadcast').row()
   .text('📋 Kinolar ro\'yxati', 'admin:list').text('🗑️ Kino o\'chirish', 'admin:delete').row()
   .text('🔒 Majburiy obuna', 'admin:subscriptions').row()
+  .text('⚙️ Sozlamalar', 'admin:settings').row()
   .text('❌ Yopish', 'admin:close');
 
 const backBtn = new InlineKeyboard().text('🔙 Orqaga', 'admin:back');
@@ -131,6 +135,53 @@ adminHandler.callbackQuery('admin:broadcast', async (ctx) => {
     '📢 <b>Barcha foydalanuvchilarga xabar yuborish</b>\n\nYubormoqchi bo\'lgan xabaringizni yozing:',
     { parse_mode: 'HTML', reply_markup: backBtn }
   );
+});
+
+// ─── ⚙️ SOZLAMALAR ──────────────────────────────────────────────────────────────
+
+adminHandler.callbackQuery('admin:settings', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const currentChannelId = await getChannelId();
+
+  const keyboard = new InlineKeyboard()
+    .text('📡 Kanal ulash / o\'zgartirish', 'admin:settings_set_channel').row();
+
+  if (currentChannelId) {
+    keyboard.text('🗑️ Kanalni o\'chirish', 'admin:settings_remove_channel').row();
+  }
+  keyboard.text('🔙 Orqaga', 'admin:back');
+
+  const channelText = currentChannelId
+    ? `✅ Ulangan kanal: <code>${currentChannelId}</code>`
+    : '⚠️ Hech qanday kanal ulanmagan.';
+
+  await ctx.editMessageText(
+    `⚙️ <b>Sozlamalar</b>\n\n📡 <b>Kino kanali:</b>\n${channelText}\n\nKinolar shu kanaldan forward qilinadi.`,
+    { parse_mode: 'HTML', reply_markup: keyboard }
+  );
+});
+
+adminHandler.callbackQuery('admin:settings_set_channel', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  adminStates.set(ctx.from.id, { type: 'settings_waiting_channel' });
+  await ctx.editMessageText(
+    '📡 <b>Kino kanalini ulash</b>\n\nKanal username yoki ID sini yuboring:\n\n📌 Misol:\n<code>@mening_kino_kanal</code>\n<code>-1001234567890</code>\n\n⚠️ Bot shu kanalda <b>admin</b> bo\'lishi shart!',
+    { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('🔙 Orqaga', 'admin:settings') }
+  );
+});
+
+adminHandler.callbackQuery('admin:settings_remove_channel', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  try {
+    await Settings.deleteOne({ key: 'channel_id' });
+    await ctx.editMessageText(
+      '✅ Kanal muvaffaqiyatli o\'chirildi.\n\n⚙️ <b>Sozlamalar</b>\n\n📡 Kino kanali: ⚠️ Hech qanday kanal ulanmagan.',
+      { parse_mode: 'HTML', reply_markup: new InlineKeyboard().text('📡 Kanal ulash', 'admin:settings_set_channel').row().text('🔙 Orqaga', 'admin:back') }
+    );
+  } catch (err) {
+    console.error(err);
+    await ctx.answerCallbackQuery('❌ Xatolik yuz berdi');
+  }
 });
 
 // ─── 🔒 MAJBURIY OBUNA ────────────────────────────────────────────────────────
@@ -248,6 +299,36 @@ adminHandler.on('message:text', async (ctx, next) => {
       `📢 <b>Broadcast yakunlandi!</b>\n\n✅ Yuborildi: ${sent} ta\n❌ Xato: ${failed} ta`,
       { parse_mode: 'HTML', reply_markup: mainPanel }
     );
+    return;
+  }
+
+  // --- Settings: waiting for channel ID ---
+  if (state?.type === 'settings_waiting_channel') {
+    adminStates.delete(userId);
+    const input = ctx.message.text.trim();
+    try {
+      // Validate by calling getChat
+      const chat = await ctx.api.getChat(input) as any;
+      const channelId = String(chat.id);
+      const title = chat.title || chat.username || input;
+
+      await Settings.findOneAndUpdate(
+        { key: 'channel_id' },
+        { key: 'channel_id', value: channelId },
+        { upsert: true, new: true }
+      );
+
+      await ctx.reply(
+        `✅ Kanal muvaffaqiyatli ulandi!\n\n📡 Kanal: <b>${title}</b>\n🆔 ID: <code>${channelId}</code>\n\nEndi kinolar shu kanaldan forward qilinadi.`,
+        { parse_mode: 'HTML', reply_markup: mainPanel }
+      );
+    } catch (err) {
+      console.error(err);
+      await ctx.reply(
+        '❌ Kanal topilmadi yoki bot kanalda admin emas.\n\nBotni kanalga admin qilib, qaytadan urinib ko\'ring.',
+        { reply_markup: mainPanel }
+      );
+    }
     return;
   }
 
