@@ -142,17 +142,7 @@ userHandler.on('message:text', async (ctx) => {
       return;
     }
 
-    // 3. Forward from channel if possible
-    if (movie.messageId && movie.channelId) {
-      try {
-        await ctx.api.forwardMessage(ctx.chat.id, movie.channelId, movie.messageId);
-        return;
-      } catch (forwardErr) {
-        console.error('Forward failed, falling back to fileId:', forwardErr);
-      }
-    }
-
-    // 4. Fallback: send via fileId
+    // 3. Send movie via fileId with inline button
     let caption = movie.title ? `🎬 <b>${movie.title}</b>` : '';
     if (movie.year && caption) caption += ` (${movie.year})`;
     
@@ -166,7 +156,13 @@ userHandler.on('message:text', async (ctx) => {
     
     if (!caption) caption = '🎬';
 
-    await ctx.replyWithVideo(movie.fileId, { caption, parse_mode: 'HTML' });
+    const keyboard = new InlineKeyboard().url('🎬 Do'stlarga ulashish / Botga kirish', 'https://t.me/UzFilmchi_bot');
+
+    await ctx.replyWithVideo(movie.fileId, {
+      caption,
+      parse_mode: 'HTML',
+      reply_markup: keyboard
+    });
   } catch (error) {
     console.error('Error fetching movie:', error);
     await ctx.reply('Kechirasiz, xatolik yuz berdi.');
