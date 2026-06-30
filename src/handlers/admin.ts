@@ -17,7 +17,8 @@ const isAdmin = (userId: number) => getAdminIds().includes(userId);
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 type AdminState =
-  | { type: 'add_waiting_video'; code: string; title?: string; year?: number }
+  | { type: 'add_waiting_code' }
+  | { type: 'add_waiting_video'; code: string }
   | { type: 'delete_waiting_code' }
   | { type: 'broadcast_waiting_message' }
   | { type: 'sub_waiting_channel' }
@@ -53,8 +54,9 @@ adminHandler.command('admin', async (ctx) => {
 // ─── REPLY KEYBOARD BUTTON HANDLERS ──────────────────────────────────────────
 
 const handleAddButton = async (ctx: any) => {
+  adminStates.set(ctx.from.id, { type: 'add_waiting_code' });
   await ctx.reply(
-    '➕ <b>Kino qo\'shish</b>\n\nQuyidagi formatda yozing:\n<code>/add [kod] [nomi] [yil]</code>\n\n📌 Misol:\n<code>/add 001 Inception 2010</code>\n<code>/add 002</code> (nomi va yilsiz ham bo\'ladi)',
+    '➕ <b>Kino qo\'shish</b>\n\nKino kodini yuboring (masalan: <code>001</code>):\n\n❌ Bekor qilish uchun /admin yozing',
     { parse_mode: 'HTML' }
   );
 };
@@ -292,6 +294,22 @@ adminHandler.on('message:text', async (ctx, next) => {
     return;
   }
 
+  // --- Add: waiting for code ---
+  if (state.type === 'add_waiting_code') {
+    const code = text;
+    const existing = await Movie.findOne({ code });
+    if (existing) {
+      await ctx.reply(`⚠️ <b>${code}</b> kodi bilan kino allaqachon mavjud. Iltimos, boshqa kod yuboring:\n\n❌ Bekor qilish uchun /admin yozing`, { parse_mode: 'HTML' });
+      return;
+    }
+    adminStates.set(userId, { type: 'add_waiting_video', code });
+    await ctx.reply(
+      `🎥 <b>Kino videosini yuboring</b>\n\nKino kodi: <code>${code}</code>\n\nEndi kino videosini yuboring. Kino nomi va boshqa ma'lumotlari video tagida (caption) bo'lishi kerak. Ular foydalanuvchiga video bilan birga yuboriladi.\n\n❌ Bekor qilish uchun /admin yozing`,
+      { parse_mode: 'HTML' }
+    );
+    return;
+  }
+
   // --- Delete: waiting for code ---
   if (state.type === 'delete_waiting_code') {
     adminStates.delete(userId);
@@ -497,7 +515,7 @@ adminHandler.on('message:video', async (ctx, next) => {
     return;
   }
 
-  // ── Case 2: Waiting for video after /add command ─────────────────────────
+  // ── Case 2: Waiting for video after adding code ─────────────────────────
   if (state?.type !== 'add_waiting_video') {
     await next();
     return;
@@ -505,17 +523,17 @@ adminHandler.on('message:video', async (ctx, next) => {
 
   adminStates.delete(userId);
   const fileId = video.file_id;
+  const caption = msg.caption || undefined;
 
   try {
     const movie = new Movie({
       code: state.code,
       fileId,
-      title: state.title,
-      year: state.year
+      caption
     });
     await movie.save();
     await ctx.reply(
-      `✅ <b>Kino qo'shildi!</b>\n\n📌 Kod: <code>${state.code}</code>\n🎬 Nomi: <b>${state.title ?? '—'}</b>${state.year ? `\n📅 Yil: ${state.year}` : ''}`,
+      `✅ <b>Kino qo'shildi!</b>\n\n📌 Kod: <code>${state.code}</code>\n📝 Tagidagi yozuv: ${caption ? '\n' + caption : 'yo\'q'}`,
       { parse_mode: 'HTML', reply_markup: mainPanel }
     );
   } catch (err: any) {
@@ -525,7 +543,7 @@ adminHandler.on('message:video', async (ctx, next) => {
       });
     } else {
       console.error(err);
-      await ctx.reply('❌ Saqlashda xatolik yuz berdi.');
+      await ctx.reply('❌ Saqlashda xatolik yuz berdi.', { reply_markup: mainPanel });
     }
   }
 });
@@ -533,28 +551,9 @@ adminHandler.on('message:video', async (ctx, next) => {
 // ─── COMMANDS ─────────────────────────────────────────────────────────────────
 
 adminHandler.command('add', async (ctx) => {
-  const args = ctx.match?.trim();
-  if (!args) {
-    await ctx.reply('❌ Format: <code>/add [kod] [nomi] [yil]</code>', { parse_mode: 'HTML' });
-    return;
-  }
-
-  const parts = args.split(/\s+/);
-  const code = parts[0];
-  let year: number | undefined;
-  let titleParts = parts.slice(1);
-
-  const last = parts[parts.length - 1];
-  if (parts.length > 1 && /^\d{4}$/.test(last)) {
-    year = parseInt(last);
-    titleParts = parts.slice(1, -1);
-  }
-
-  const title = titleParts.join(' ') || undefined;
-  adminStates.set(ctx.from!.id, { type: 'add_waiting_video', code, title, year });
-
+  adminStates.set(ctx.from!.id, { type: 'add_waiting_code' });
   await ctx.reply(
-    `✅ Ma'lumotlar qabul qilindi!\n\n📌 Kod: <code>${code}</code>\n🎬 Nomi: <b>${title ?? '—'}</b>${year ? `\n📅 Yil: ${year}` : ''}\n\nEndi kino videosini yuboring:`,
+    '➕ <b>Kino qo\'shish</b>\n\nKino kodini yuboring (masalan: <code>001</code>):\n\n❌ Bekor qilish uchun /admin yozing',
     { parse_mode: 'HTML' }
   );
 });

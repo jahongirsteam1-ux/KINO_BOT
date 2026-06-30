@@ -153,9 +153,18 @@ userHandler.on('message:text', async (ctx) => {
     }
 
     // 4. Fallback: send via fileId
-    let caption = movie.title ? `🎬 <b>${movie.title}</b>` : '🎬';
-    if (movie.year) caption += ` (${movie.year})`;
-    if (movie.caption) caption += `\n\n${movie.caption}`;
+    let caption = movie.title ? `🎬 <b>${movie.title}</b>` : '';
+    if (movie.year && caption) caption += ` (${movie.year})`;
+    
+    if (movie.caption) {
+      if (caption) {
+        caption += `\n\n${movie.caption}`;
+      } else {
+        caption = movie.caption;
+      }
+    }
+    
+    if (!caption) caption = '🎬';
 
     await ctx.replyWithVideo(movie.fileId, { caption, parse_mode: 'HTML' });
   } catch (error) {
