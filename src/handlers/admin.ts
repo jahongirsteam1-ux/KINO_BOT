@@ -445,14 +445,66 @@ adminHandler.on('message:text', async (ctx, next) => {
 adminHandler.on('message:video', async (ctx, next) => {
   const userId = ctx.from!.id;
   const state = adminStates.get(userId);
+  const msg = ctx.message;
+  const video = msg.video;
 
+  // ── Case 1: Forward from channel — auto-index using caption ──────────────
+  const msgAny = msg as any;
+  if (!state && (msgAny.forward_origin || msgAny.forward_from_chat || msgAny.forward_date)) {
+    const rawCaption = msg.caption || '';
+    const lines = rawCaption.split('\n').map((l: string) => l.trim()).filter(Boolean);
+
+    if (lines.length === 0) {
+      await ctx.reply('⚠️ Forward qilingan videoda caption (kod) yo\'q. Kino saqlanmadi.', { reply_markup: mainPanel });
+      return;
+    }
+
+    const code = lines[0];
+    const title = lines[1] || undefined;
+    let year: number | undefined;
+    let descLines: string[] = [];
+
+    if (lines[2] && /^\d{4}$/.test(lines[2])) {
+      year = parseInt(lines[2]);
+      descLines = lines.slice(3);
+    } else {
+      descLines = lines.slice(2);
+    }
+
+    const caption = descLines.join('\n') || undefined;
+    const fileId = video.file_id;
+    const forwardChatId = msgAny.forward_from_chat?.id;
+    const messageId = msgAny.forward_from_message_id || msg.message_id;
+
+    try {
+      await Movie.findOneAndUpdate(
+        { code },
+        { code, title, year, caption, fileId, messageId, channelId: forwardChatId || undefined },
+        { upsert: true, new: true }
+      );
+      await ctx.reply(
+        `✅ <b>Kino saqlandi!</b>\n\n📌 Kod: <code>${code}</code>\n🎬 Nomi: <b>${title ?? '—'}</b>${year ? `\n📅 Yil: ${year}` : ''}`,
+        { parse_mode: 'HTML', reply_markup: mainPanel }
+      );
+    } catch (err: any) {
+      if (err.code === 11000) {
+        await ctx.reply(`⚠️ <b>${code}</b> kodli kino yangilandi!`, { parse_mode: 'HTML', reply_markup: mainPanel });
+      } else {
+        console.error(err);
+        await ctx.reply('❌ Saqlashda xatolik yuz berdi.', { reply_markup: mainPanel });
+      }
+    }
+    return;
+  }
+
+  // ── Case 2: Waiting for video after /add command ─────────────────────────
   if (state?.type !== 'add_waiting_video') {
     await next();
     return;
   }
 
   adminStates.delete(userId);
-  const fileId = ctx.message.video.file_id;
+  const fileId = video.file_id;
 
   try {
     const movie = new Movie({
