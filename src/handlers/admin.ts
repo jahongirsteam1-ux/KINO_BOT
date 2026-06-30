@@ -523,7 +523,15 @@ adminHandler.on('message:video', async (ctx, next) => {
 
   adminStates.delete(userId);
   const fileId = video.file_id;
-  const caption = msg.caption || undefined;
+  
+  const caption = msg.caption || `📺Ushbu videoni to'ligʻini botga joyladik bot orqali yuklab olishingiz mumkin❗️🔞🔞🔞🔞🔞🔞🔞
+
+🔢 Kino kodi: ${state.code}
+
+📍Bot manzili: @UzFilmchi_bot
+                    
+⚡️⚡️⚡️⚡️⚡️⚡️⚡️⚡️720hd
+🔥LIKE BOSING zoʻrlari chiqadi✔️`;
 
   try {
     const movie = new Movie({
