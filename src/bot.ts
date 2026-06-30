@@ -21,25 +21,33 @@ const getAdminIds = (): number[] => {
 };
 
 // ─── CHANNEL POST HANDLER ─────────────────────────────────────────────────────
-bot.on('channel_post:video', async (ctx) => {
+// Shared handler logic for new and edited channel video posts
+const handleChannelVideo = async (ctx: any, post: any) => {
   const { getChannelId } = await import('./helpers/settings');
   const configuredChannelId = await getChannelId();
 
-  const post = ctx.channelPost;
   const chatId = post.chat.id;
   const chatUsername = (post.chat as any).username
     ? `@${(post.chat as any).username}`
     : null;
 
+  console.log(`📡 Channel post received from: ${chatId} (${chatUsername}). Configured: ${configuredChannelId}`);
+
   if (configuredChannelId) {
     const matchById = String(chatId) === configuredChannelId;
     const matchByUsername = chatUsername === configuredChannelId;
-    if (!matchById && !matchByUsername) return;
+    if (!matchById && !matchByUsername) {
+      console.log(`❌ Channel ID mismatch — skipping. Got: ${chatId}, Expected: ${configuredChannelId}`);
+      return;
+    }
   }
 
   const rawCaption = post.caption || '';
   const lines = rawCaption.split('\n').map((l: string) => l.trim()).filter(Boolean);
-  if (lines.length === 0) return;
+  if (lines.length === 0) {
+    console.log('⚠️ Caption bo\'sh — kino saqlanmadi.');
+    return;
+  }
 
   const code = lines[0];
   const title = lines[1] || undefined;
@@ -67,6 +75,14 @@ bot.on('channel_post:video', async (ctx) => {
   } catch (err) {
     console.error('❌ Kino saqlashda xatolik:', err);
   }
+};
+
+bot.on('channel_post:video', async (ctx) => {
+  await handleChannelVideo(ctx, ctx.channelPost);
+});
+
+bot.on('edited_channel_post:video', async (ctx) => {
+  await handleChannelVideo(ctx, ctx.editedChannelPost);
 });
 
 // ─── JOIN REQUEST HANDLER ───────────────────────────────────────────────────────
@@ -106,7 +122,7 @@ const startBot = async () => {
   console.log('🤖 Bot ishga tushmoqda...');
   await bot.start({
     drop_pending_updates: true,
-    allowed_updates: ['message', 'callback_query', 'channel_post', 'chat_join_request'],
+    allowed_updates: ['message', 'callback_query', 'channel_post', 'edited_channel_post', 'chat_join_request'],
     onStart: () => console.log('✅ Bot muvaffaqiyatli ishga tushdi!'),
   });
 };
