@@ -112,18 +112,16 @@ const buildDeletePanel = async () => {
     return { text: '🗑️ <b>Kino o\'chirish</b>\n\nBazada hech qanday kino topilmadi.', keyboard };
   }
 
-  movies.forEach(m => {
-    // Get the first line of caption/title
-    let displayTitle = m.title || '';
-    if (!displayTitle && m.caption) {
-      displayTitle = m.caption.split('\n')[0];
+  movies.forEach((m, index) => {
+    keyboard.text(`❌ ${m.code}`, `admin:del_movie:${m._id}`);
+    if ((index + 1) % 3 === 0) {
+      keyboard.row();
     }
-    if (displayTitle.length > 20) {
-      displayTitle = displayTitle.slice(0, 20) + '...';
-    }
-    keyboard.text(`❌ [${m.code}] ${displayTitle || 'Nomsiz'}`, `admin:del_movie:${m._id}`).row();
   });
   
+  if (movies.length % 3 !== 0) {
+    keyboard.row();
+  }
   keyboard.text('🔙 Orqaga', 'admin:back');
 
   return {
