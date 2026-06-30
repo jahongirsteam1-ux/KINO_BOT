@@ -19,7 +19,6 @@ const isAdmin = (userId: number) => getAdminIds().includes(userId);
 type AdminState =
   | { type: 'add_waiting_code' }
   | { type: 'add_waiting_video'; code: string }
-  | { type: 'delete_waiting_code' }
   | { type: 'broadcast_waiting_message' }
   | { type: 'sub_waiting_channel' }
   | { type: 'sub_waiting_link'; channelId: string; title: string; defaultLink: string }
@@ -104,12 +103,38 @@ const handleListButton = async (ctx: any) => {
   }
 };
 
+const buildDeletePanel = async () => {
+  const movies = await Movie.find().sort({ addedAt: -1 }).limit(50);
+  const keyboard = new InlineKeyboard();
+
+  if (movies.length === 0) {
+    keyboard.text('🔙 Orqaga', 'admin:back');
+    return { text: '🗑️ <b>Kino o\'chirish</b>\n\nBazada hech qanday kino topilmadi.', keyboard };
+  }
+
+  movies.forEach(m => {
+    // Get the first line of caption/title
+    let displayTitle = m.title || '';
+    if (!displayTitle && m.caption) {
+      displayTitle = m.caption.split('\n')[0];
+    }
+    if (displayTitle.length > 20) {
+      displayTitle = displayTitle.slice(0, 20) + '...';
+    }
+    keyboard.text(`❌ [${m.code}] ${displayTitle || 'Nomsiz'}`, `admin:del_movie:${m._id}`).row();
+  });
+  
+  keyboard.text('🔙 Orqaga', 'admin:back');
+
+  return {
+    text: `🗑️ <b>Kino o'chirish</b>\n\nO'chirmoqchi bo'lgan kinoni tanlang (Oxirgi 50 ta ko'rsatilgan):`,
+    keyboard
+  };
+};
+
 const handleDeleteButton = async (ctx: any) => {
-  adminStates.set(ctx.from.id, { type: 'delete_waiting_code' });
-  await ctx.reply(
-    '🗑️ <b>Kino o\'chirish</b>\n\nO\'chirmoqchi bo\'lgan kinoning kodini yuboring:\n\n📌 Misol: <code>001</code>\n\n❌ Bekor qilish uchun /admin yozing',
-    { parse_mode: 'HTML' }
-  );
+  const { text, keyboard } = await buildDeletePanel();
+  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: keyboard });
 };
 
 const handleSubButton = async (ctx: any) => {
@@ -272,6 +297,26 @@ adminHandler.callbackQuery(/^admin:sub_remove:(.+)$/, async (ctx) => {
   }
 });
 
+adminHandler.callbackQuery(/^admin:del_movie:(.+)$/, async (ctx) => {
+  const mongoId = ctx.match[1];
+  try {
+    const removed = await Movie.findByIdAndDelete(mongoId);
+    if (removed) {
+      await ctx.answerCallbackQuery(`✅ ${removed.code} o'chirildi!`);
+      const { text, keyboard } = await buildDeletePanel();
+      await ctx.editMessageText(
+        `✅ <b>Kino o'chirildi!</b> (Kod: <code>${removed.code}</code>)\n\n` + text,
+        { parse_mode: 'HTML', reply_markup: keyboard }
+      );
+    } else {
+      await ctx.answerCallbackQuery('⚠️ Kino topilmadi.');
+    }
+  } catch (err) {
+    console.error(err);
+    await ctx.answerCallbackQuery('❌ O\'chirishda xatolik yuz berdi');
+  }
+});
+
 // ─── TEXT MESSAGE HANDLER ─────────────────────────────────────────────────────
 adminHandler.on('message:text', async (ctx, next) => {
   const userId = ctx.from!.id;
@@ -310,27 +355,7 @@ adminHandler.on('message:text', async (ctx, next) => {
     return;
   }
 
-  // --- Delete: waiting for code ---
-  if (state.type === 'delete_waiting_code') {
-    adminStates.delete(userId);
-    const code = text;
-    try {
-      const result = await Movie.findOneAndDelete({ code });
-      if (result) {
-        await ctx.reply(`✅ <b>${code}</b> — "${result.title ?? 'Nomsiz'}" o'chirildi!`, {
-          parse_mode: 'HTML', reply_markup: mainPanel
-        });
-      } else {
-        await ctx.reply(`❌ <b>${code}</b> kodli kino topilmadi.`, {
-          parse_mode: 'HTML', reply_markup: mainPanel
-        });
-      }
-    } catch (err) {
-      console.error(err);
-      await ctx.reply('❌ Xatolik yuz berdi.', { reply_markup: mainPanel });
-    }
-    return;
-  }
+
 
   // --- Broadcast: waiting for message ---
   if (state.type === 'broadcast_waiting_message') {
