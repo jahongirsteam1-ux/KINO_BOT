@@ -120,11 +120,41 @@ bot.catch((err) => {
 const startBot = async () => {
   await connectDB();
   console.log('🤖 Bot ishga tushmoqda...');
-  await bot.start({
-    drop_pending_updates: true,
-    allowed_updates: ['message', 'callback_query', 'channel_post', 'edited_channel_post', 'chat_join_request'],
-    onStart: () => console.log('✅ Bot muvaffaqiyatli ishga tushdi!'),
-  });
+
+  const webhookUrl = process.env.WEBHOOK_URL;
+
+  if (webhookUrl) {
+    // ── WEBHOOK mode (Railway / production) ──────────────────────────────────
+    const { webhookCallback } = await import('grammy');
+    const express = (await import('express')).default;
+
+    const app = express();
+    app.use(express.json());
+
+    const port = parseInt(process.env.PORT || '3000');
+    const path = `/webhook/${token}`;
+
+    app.post(path, webhookCallback(bot, 'express'));
+
+    // Health-check endpoint
+    app.get('/', (_req: any, res: any) => res.send('Bot is running ✅'));
+
+    app.listen(port, async () => {
+      console.log(`🌐 Webhook server started on port ${port}`);
+      await bot.api.setWebhook(`${webhookUrl}${path}`, {
+        allowed_updates: ['message', 'callback_query', 'channel_post', 'edited_channel_post', 'chat_join_request'],
+        drop_pending_updates: true,
+      });
+      console.log(`✅ Webhook set: ${webhookUrl}${path}`);
+    });
+  } else {
+    // ── POLLING mode (local development) ────────────────────────────────────
+    await bot.start({
+      drop_pending_updates: true,
+      allowed_updates: ['message', 'callback_query', 'channel_post', 'edited_channel_post', 'chat_join_request'],
+      onStart: () => console.log('✅ Bot muvaffaqiyatli ishga tushdi! (polling)'),
+    });
+  }
 };
 
 startBot();

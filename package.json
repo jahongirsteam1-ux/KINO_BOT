@@ -7,13 +7,16 @@
     "start": "node dist/bot.js"
   },
   "dependencies": {
+    "@grammyjs/runner": "^2.0.3",
+    "@types/express": "^5.0.6",
+    "dotenv": "^16.0.0",
+    "express": "^5.2.1",
     "grammy": "^1.26.0",
-    "mongoose": "^8.0.0",
-    "dotenv": "^16.0.0"
+    "mongoose": "^8.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0",
     "ts-node": "^10.9.0",
-    "@types/node": "^20.0.0"
+    "typescript": "^5.0.0"
   }
 }
