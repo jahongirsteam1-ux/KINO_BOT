@@ -156,7 +156,7 @@ userHandler.on('message:text', async (ctx) => {
     
     if (!caption) caption = '🎬';
 
-    const keyboard = new InlineKeyboard().url('🎬 Do'stlarga ulashish / Botga kirish', 'https://t.me/UzFilmchi_bot');
+    const keyboard = new InlineKeyboard().url("🎬 Do'stlarga ulashish / Botga kirish", 'https://t.me/UzFilmchi_bot');
 
     await ctx.replyWithVideo(movie.fileId, {
       caption,
