@@ -8,9 +8,7 @@
   },
   "dependencies": {
     "@grammyjs/runner": "^2.0.3",
-    "@types/express": "^5.0.6",
     "dotenv": "^16.0.0",
-    "express": "^5.2.1",
     "grammy": "^1.26.0",
     "mongoose": "^8.0.0"
   },
