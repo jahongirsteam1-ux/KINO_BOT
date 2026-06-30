@@ -121,7 +121,8 @@ const startBot = async () => {
   await connectDB();
   console.log('🤖 Bot ishga tushmoqda...');
 
-  const webhookUrl = process.env.WEBHOOK_URL;
+  const webhookUrl = process.env.WEBHOOK_URL
+    || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null);
 
   if (webhookUrl) {
     // ── WEBHOOK mode (Railway / production) ──────────────────────────────────
