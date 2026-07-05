@@ -29,6 +29,8 @@ export const setupCronJobs = (bot: Bot) => {
         msg = await AutoMessage.findOne().skip(random);
       }
 
+      if (!msg) return; // For TypeScript type safety
+
       console.log(`Avto-xabar (ID: ${msg._id}) tarqatish boshlandi...`);
 
       const users = await User.find({}, 'telegramId');
