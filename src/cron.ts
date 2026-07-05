@@ -11,12 +11,22 @@ export const setupCronJobs = (bot: Bot) => {
   cron.schedule('0 10,15,20 * * *', async () => {
     console.log('⏰ Auto-broadcast cron triggered!');
     try {
-      // Eng oxirgi yuborilgan vaqti bo'yicha saralab eng eskisini olish
-      const msg = await AutoMessage.findOne().sort({ lastSentAt: 1, addedAt: 1 });
+      // 1. Eng avvalo yangi (hali yuborilmagan) xabarni qidiramiz
+      let msg = await AutoMessage.findOne({ lastSentAt: { $exists: false } }).sort({ addedAt: 1 });
       
       if (!msg) {
-        console.log('Hech qanday avto-xabar topilmadi.');
-        return;
+        msg = await AutoMessage.findOne({ lastSentAt: null }).sort({ addedAt: 1 });
+      }
+
+      // 2. Agar yangi xabar qolmagan bo'lsa, mavjudlaridan tasodifiysini tanlaymiz
+      if (!msg) {
+        const count = await AutoMessage.countDocuments();
+        if (count === 0) {
+          console.log('Hech qanday avto-xabar topilmadi.');
+          return;
+        }
+        const random = Math.floor(Math.random() * count);
+        msg = await AutoMessage.findOne().skip(random);
       }
 
       console.log(`Avto-xabar (ID: ${msg._id}) tarqatish boshlandi...`);
