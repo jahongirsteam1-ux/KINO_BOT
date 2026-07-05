@@ -163,6 +163,12 @@ userHandler.on('message:text', async (ctx) => {
       parse_mode: 'HTML',
       reply_markup: keyboard
     });
+
+    // 4. Save to history
+    await User.updateOne(
+      { telegramId: userId },
+      { $push: { history: { movieCode: code, watchedAt: new Date() } } }
+    );
   } catch (error) {
     console.error('Error fetching movie:', error);
     await ctx.reply('Kechirasiz, xatolik yuz berdi.');

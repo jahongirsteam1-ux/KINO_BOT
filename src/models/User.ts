@@ -7,6 +7,7 @@ export interface IUser extends Document {
   lastName?: string;
   joinedAt: Date;
   passedChannels: string[];
+  history: { movieCode: string; watchedAt: Date }[];
 }
 
 const UserSchema: Schema = new Schema({
@@ -15,7 +16,11 @@ const UserSchema: Schema = new Schema({
   firstName: { type: String },
   lastName: { type: String },
   joinedAt: { type: Date, default: Date.now },
-  passedChannels: { type: [String], default: [] }
+  passedChannels: { type: [String], default: [] },
+  history: { 
+    type: [{ movieCode: String, watchedAt: { type: Date, default: Date.now } }], 
+    default: [] 
+  }
 });
 
 export const User = mongoose.model<IUser>('User', UserSchema);

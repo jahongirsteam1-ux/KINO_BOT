@@ -142,6 +142,40 @@ adminHandler.on('message', async (ctx, next) => {
   await next();
 });
 
+// ─── USER HISTORY (/user_ID) ──────────────────────────────────────────────────
+adminHandler.hears(/^\/user_(\d+)$/, async (ctx) => {
+  const targetId = parseInt(ctx.match[1], 10);
+  try {
+    const user = await User.findOne({ telegramId: targetId });
+    if (!user) {
+      await ctx.reply('⚠️ Foydalanuvchi topilmadi.');
+      return;
+    }
+
+    const name = [user.firstName, user.lastName].filter(Boolean).join(' ') || "Noma'lum";
+    let text = `👤 <b>Foydalanuvchi tarixi:</b>\n\nIsmi: <b>${name}</b>\nID: <code>${user.telegramId}</code>\nJami ko'rgan kinolari: <b>${user.history?.length || 0} ta</b>\n\n`;
+
+    if (user.history && user.history.length > 0) {
+      // Sort by watchedAt descending, limit to last 50 for safety
+      const history = [...user.history].sort((a, b) => b.watchedAt.getTime() - a.watchedAt.getTime()).slice(0, 50);
+      history.forEach((h, i) => {
+        const date = new Date(h.watchedAt).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent' });
+        text += `${i + 1}. Kod: <code>${h.movieCode}</code> — 🕐 ${date}\n`;
+      });
+      if (user.history.length > 50) {
+        text += `\n<i>Va yana ${user.history.length - 50} ta kino ko'rgan. Ro'yxatda faqat oxirgi 50 tasi ko'rsatildi.</i>`;
+      }
+    } else {
+      text += '<i>Hali hech qanday kino ko\'rmagan.</i>';
+    }
+
+    await ctx.reply(text, { parse_mode: 'HTML' });
+  } catch (err) {
+    console.error('User history error:', err);
+    await ctx.reply('❌ Xatolik yuz berdi.');
+  }
+});
+
 // ─── REPLY KEYBOARD BUTTON HANDLERS ──────────────────────────────────────────
 
 const handleAddButton = async (ctx: any) => {
@@ -163,7 +197,8 @@ const buildUsersPanel = async (page: number) => {
   users.forEach((u, i) => {
     const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || "Noma'lum";
     const uname = u.username ? ` (@${u.username})` : '';
-    text += `${skip + i + 1}. <a href="tg://user?id=${u.telegramId}">${name}</a>${uname}\n`;
+    const count = u.history ? u.history.length : 0;
+    text += `${skip + i + 1}. <a href="tg://user?id=${u.telegramId}">${name}</a>${uname} — 👁 <b>${count}</b> ta kino /user_${u.telegramId}\n`;
   });
 
   const keyboard = new InlineKeyboard();
