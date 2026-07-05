@@ -84,7 +84,7 @@ adminHandler.on('message', async (ctx, next) => {
       if (failedUsers.length <= 15) {
         resultText += `\n\n<b>Xato bo'lgan foydalanuvchilar:</b>\n`;
         failedUsers.forEach((u, i) => {
-          const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || 'Noma\\'lum';
+          const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || "Noma'lum";
           const uname = u.username ? ` (@${u.username})` : '';
           resultText += `${i + 1}. <a href="tg://user?id=${u.telegramId}">${name}</a>${uname} (ID: <code>${u.telegramId}</code>)\n`;
         });
@@ -92,11 +92,11 @@ adminHandler.on('message', async (ctx, next) => {
       } else {
         await ctx.reply(resultText, { parse_mode: 'HTML', reply_markup: mainPanel });
         
-        let fileContent = `Xato bo'lgan foydalanuvchilar ro'yxati:\\n\\n`;
+        let fileContent = `Xato bo'lgan foydalanuvchilar ro'yxati:\n\n`;
         failedUsers.forEach((u, i) => {
-          const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || 'Noma\\'lum';
+          const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || "Noma'lum";
           const uname = u.username ? ` (@${u.username})` : '';
-          fileContent += `${i + 1}. ${name}${uname} (ID: ${u.telegramId})\\n`;
+          fileContent += `${i + 1}. ${name}${uname} (ID: ${u.telegramId})\n`;
         });
         
         const buffer = Buffer.from(fileContent, 'utf-8');
