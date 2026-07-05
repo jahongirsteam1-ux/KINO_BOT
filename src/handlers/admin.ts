@@ -50,6 +50,41 @@ adminHandler.command('admin', async (ctx) => {
   });
 });
 
+// ─── BROADCAST HANDLER (ANY MESSAGE TYPE) ────────────────────────────────────
+adminHandler.on('message', async (ctx, next) => {
+  const userId = ctx.from!.id;
+  const state = adminStates.get(userId);
+
+  if (state?.type === 'broadcast_waiting_message') {
+    const text = ctx.message.text?.trim();
+    if (text === '/admin' || text === '❌ Panelni yopish' || text === '📢 Xabar yuborish') {
+      await next();
+      return;
+    }
+
+    adminStates.delete(userId);
+    const users = await User.find({}, 'telegramId');
+    let sent = 0, failed = 0;
+
+    await ctx.reply(`📤 Xabar yuborilmoqda... (${users.length} ta foydalanuvchi)`);
+    for (const user of users) {
+      try {
+        await ctx.api.copyMessage(user.telegramId, ctx.chat.id, ctx.message.message_id);
+        sent++;
+      } catch (err) {
+        failed++;
+      }
+      await new Promise(r => setTimeout(r, 50));
+    }
+    await ctx.reply(
+      `📢 <b>Broadcast yakunlandi!</b>\n\n✅ Yuborildi: ${sent} ta\n❌ Xato: ${failed} ta`,
+      { parse_mode: 'HTML', reply_markup: mainPanel }
+    );
+    return;
+  }
+  await next();
+});
+
 // ─── REPLY KEYBOARD BUTTON HANDLERS ──────────────────────────────────────────
 
 const handleAddButton = async (ctx: any) => {
@@ -355,26 +390,7 @@ adminHandler.on('message:text', async (ctx, next) => {
 
 
 
-  // --- Broadcast: waiting for message ---
-  if (state.type === 'broadcast_waiting_message') {
-    adminStates.delete(userId);
-    const users = await User.find({}, 'telegramId');
-    let sent = 0, failed = 0;
 
-    await ctx.reply(`📤 Xabar yuborilmoqda... (${users.length} ta foydalanuvchi)`);
-    for (const user of users) {
-      try {
-        await ctx.api.sendMessage(user.telegramId, text);
-        sent++;
-      } catch { failed++; }
-      await new Promise(r => setTimeout(r, 50));
-    }
-    await ctx.reply(
-      `📢 <b>Broadcast yakunlandi!</b>\n\n✅ Yuborildi: ${sent} ta\n❌ Xato: ${failed} ta`,
-      { parse_mode: 'HTML', reply_markup: mainPanel }
-    );
-    return;
-  }
 
   // --- Settings: waiting for channel ---
   if (state.type === 'settings_waiting_channel') {
