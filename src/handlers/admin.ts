@@ -152,17 +152,35 @@ const handleAddButton = async (ctx: any) => {
   );
 };
 
+const buildUsersPanel = async (page: number) => {
+  const limit = 50;
+  const skip = page * limit;
+  const total = await User.countDocuments();
+  const users = await User.find().sort({ joinedAt: -1 }).skip(skip).limit(limit);
+  
+  let text = `👥 <b>Foydalanuvchilar ro'yxati</b>\n\n📊 Jami: <b>${total} ta</b>\n📄 Sahifa: <b>${page + 1}</b>\n\n`;
+  
+  users.forEach((u, i) => {
+    const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || "Noma'lum";
+    const uname = u.username ? ` (@${u.username})` : '';
+    text += `${skip + i + 1}. <a href="tg://user?id=${u.telegramId}">${name}</a>${uname}\n`;
+  });
+
+  const keyboard = new InlineKeyboard();
+  if (page > 0) {
+    keyboard.text('⬅️ Oldingi', `admin:users_page:${page - 1}`);
+  }
+  if (skip + limit < total) {
+    keyboard.text('Keyingi ➡️', `admin:users_page:${page + 1}`);
+  }
+  
+  return { text, keyboard };
+};
+
 const handleUsersButton = async (ctx: any) => {
   try {
-    const total = await User.countDocuments();
-    const last5 = await User.find().sort({ joinedAt: -1 }).limit(5);
-    let text = `👥 <b>Foydalanuvchilar</b>\n\n📊 Jami: <b>${total} ta</b>\n\n🕐 <b>Oxirgi qo'shilganlar:</b>\n`;
-    last5.forEach((u, i) => {
-      const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || 'Noma\'lum';
-      const uname = u.username ? ` (@${u.username})` : '';
-      text += `${i + 1}. ${name}${uname}\n`;
-    });
-    await ctx.reply(text, { parse_mode: 'HTML' });
+    const { text, keyboard } = await buildUsersPanel(0);
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: keyboard });
   } catch (err) {
     console.error(err);
     await ctx.reply('❌ Xatolik yuz berdi.');
@@ -416,6 +434,17 @@ adminHandler.callbackQuery(/^admin:del_movie:(.+)$/, async (ctx) => {
   } catch (err) {
     console.error(err);
     await ctx.answerCallbackQuery('❌ O\'chirishda xatolik yuz berdi');
+  }
+});
+
+adminHandler.callbackQuery(/^admin:users_page:(\d+)$/, async (ctx) => {
+  const page = parseInt(ctx.match[1], 10);
+  try {
+    const { text, keyboard } = await buildUsersPanel(page);
+    await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: keyboard });
+  } catch (err) {
+    console.error(err);
+    await ctx.answerCallbackQuery('❌ Xatolik yuz berdi');
   }
 });
 
