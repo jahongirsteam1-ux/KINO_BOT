@@ -1,4 +1,4 @@
-import { Composer, InlineKeyboard, Keyboard } from 'grammy';
+import { Composer, InlineKeyboard, Keyboard, InputFile } from 'grammy';
 import { Movie } from '../models/Movie';
 import { User } from '../models/User';
 import { SubChannel } from '../models/SubChannel';
@@ -63,8 +63,9 @@ adminHandler.on('message', async (ctx, next) => {
     }
 
     adminStates.delete(userId);
-    const users = await User.find({}, 'telegramId');
-    let sent = 0, failed = 0;
+    const users = await User.find({});
+    let sent = 0;
+    const failedUsers: any[] = [];
 
     await ctx.reply(`📤 Xabar yuborilmoqda... (${users.length} ta foydalanuvchi)`);
     for (const user of users) {
@@ -72,14 +73,39 @@ adminHandler.on('message', async (ctx, next) => {
         await ctx.api.copyMessage(user.telegramId, ctx.chat.id, ctx.message.message_id);
         sent++;
       } catch (err) {
-        failed++;
+        failedUsers.push(user);
       }
       await new Promise(r => setTimeout(r, 50));
     }
-    await ctx.reply(
-      `📢 <b>Broadcast yakunlandi!</b>\n\n✅ Yuborildi: ${sent} ta\n❌ Xato: ${failed} ta`,
-      { parse_mode: 'HTML', reply_markup: mainPanel }
-    );
+    
+    let resultText = `📢 <b>Broadcast yakunlandi!</b>\n\n✅ Yuborildi: ${sent} ta\n❌ Xato: ${failedUsers.length} ta`;
+
+    if (failedUsers.length > 0) {
+      if (failedUsers.length <= 15) {
+        resultText += `\n\n<b>Xato bo'lgan foydalanuvchilar:</b>\n`;
+        failedUsers.forEach((u, i) => {
+          const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || 'Noma\\'lum';
+          const uname = u.username ? ` (@${u.username})` : '';
+          resultText += `${i + 1}. <a href="tg://user?id=${u.telegramId}">${name}</a>${uname} (ID: <code>${u.telegramId}</code>)\n`;
+        });
+        await ctx.reply(resultText, { parse_mode: 'HTML', reply_markup: mainPanel });
+      } else {
+        await ctx.reply(resultText, { parse_mode: 'HTML', reply_markup: mainPanel });
+        
+        let fileContent = `Xato bo'lgan foydalanuvchilar ro'yxati:\\n\\n`;
+        failedUsers.forEach((u, i) => {
+          const name = [u.firstName, u.lastName].filter(Boolean).join(' ') || 'Noma\\'lum';
+          const uname = u.username ? ` (@${u.username})` : '';
+          fileContent += `${i + 1}. ${name}${uname} (ID: ${u.telegramId})\\n`;
+        });
+        
+        const buffer = Buffer.from(fileContent, 'utf-8');
+        const file = new InputFile(buffer, 'failed_users.txt');
+        await ctx.replyWithDocument(file, { caption: "Xato bo'lganlar ro'yxati" });
+      }
+    } else {
+      await ctx.reply(resultText, { parse_mode: 'HTML', reply_markup: mainPanel });
+    }
     return;
   }
   await next();
