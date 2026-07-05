@@ -116,6 +116,8 @@ bot.catch((err) => {
   console.error(`❌ Update ${err.ctx.update.update_id} da xatolik:`, err.error);
 });
 
+import { setupCronJobs } from './cron';
+
 // ─── START ────────────────────────────────────────────────────────────────────
 const startBot = async () => {
   await connectDB();
@@ -128,6 +130,9 @@ const startBot = async () => {
   } catch (err) {
     console.log('No webhook to delete or error:', err);
   }
+
+  // Set up cron jobs before starting
+  setupCronJobs(bot);
 
   // ── POLLING mode ────────────────────────────────────
   await bot.start({

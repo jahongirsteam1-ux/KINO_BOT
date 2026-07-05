@@ -20,6 +20,7 @@ type AdminState =
   | { type: 'add_waiting_code' }
   | { type: 'add_waiting_video'; code: string }
   | { type: 'broadcast_waiting_message' }
+  | { type: 'autobroadcast_waiting_message' }
   | { type: 'sub_waiting_channel' }
   | { type: 'sub_waiting_link'; channelId: string; title: string; defaultLink: string }
   | { type: 'sub_waiting_check'; channelId: string; title: string; link: string }
@@ -33,8 +34,8 @@ const adminStates = new Map<number, AdminState>();
 const mainPanel = new Keyboard()
   .text('➕ Kino qo\'shish').row()
   .text('👥 Foydalanuvchilar').text('📢 Xabar yuborish').row()
-  .text('📋 Kinolar ro\'yxati').text('🗑️ Kino o\'chirish').row()
-  .text('🔒 Majburiy obuna').row()
+  .text('🤖 Avto-Tarqatmalar').text('📋 Kinolar ro\'yxati').row()
+  .text('🗑️ Kino o\'chirish').text('🔒 Majburiy obuna').row()
   .text('⚙️ Sozlamalar').text('❌ Panelni yopish')
   .resized()
   .persistent();
@@ -108,6 +109,36 @@ adminHandler.on('message', async (ctx, next) => {
     }
     return;
   }
+
+  if (state?.type === 'autobroadcast_waiting_message') {
+    const text = ctx.message.text?.trim();
+    if (text === '/admin' || text === '❌ Panelni yopish' || text === '🤖 Avto-Tarqatmalar') {
+      await next();
+      return;
+    }
+
+    // Save message to auto-messages pool
+    try {
+      const msg = await ctx.api.copyMessage(ctx.chat.id, ctx.chat.id, ctx.message.message_id);
+      
+      const { AutoMessage } = await import('../models/AutoMessage');
+      const autoMsg = new AutoMessage({
+        messageId: msg.message_id,
+        fromChatId: ctx.chat.id
+      });
+      await autoMsg.save();
+
+      await ctx.reply(
+        `✅ <b>Avto-xabar saqlandi!</b>\n\nUshbu xabar kuniga 3 marta avtomatik yuboriladigan xabarlar ro'yxatiga qo'shildi.`,
+        { parse_mode: 'HTML', reply_markup: mainPanel }
+      );
+    } catch (err) {
+      console.error('Avto-xabar saqlashda xatolik:', err);
+      await ctx.reply('❌ Xabar saqlashda xatolik yuz berdi.', { reply_markup: mainPanel });
+    }
+    adminStates.delete(userId);
+    return;
+  }
   await next();
 });
 
@@ -142,6 +173,18 @@ const handleBroadcastButton = async (ctx: any) => {
   adminStates.set(ctx.from.id, { type: 'broadcast_waiting_message' });
   await ctx.reply(
     '📢 <b>Barcha foydalanuvchilarga xabar yuborish</b>\n\nYubormoqchi bo\'lgan xabaringizni yozing:\n\n❌ Bekor qilish uchun /admin yozing',
+    { parse_mode: 'HTML' }
+  );
+};
+
+const handleAutoBroadcastButton = async (ctx: any) => {
+  adminStates.set(ctx.from.id, { type: 'autobroadcast_waiting_message' });
+  
+  const { AutoMessage } = await import('../models/AutoMessage');
+  const count = await AutoMessage.countDocuments();
+  
+  await ctx.reply(
+    `🤖 <b>Avto-Tarqatmalar</b>\n\nBazada jami <b>${count}</b> ta avto-xabar mavjud.\n\nYangi xabar qo'shish uchun uni shu yerga yuboring (rasm, video yoki matn bo'lishi mumkin).\n\n<i>Avto-xabarlar har kuni soat 10:00, 15:00 va 20:00 da hammaga tarqatiladi.</i>\n\n❌ Bekor qilish uchun /admin yozing.`,
     { parse_mode: 'HTML' }
   );
 };
@@ -387,6 +430,7 @@ adminHandler.on('message:text', async (ctx, next) => {
     if (text === '➕ Kino qo\'shish')       { await handleAddButton(ctx); return; }
     if (text === '👥 Foydalanuvchilar')      { await handleUsersButton(ctx); return; }
     if (text === '📢 Xabar yuborish')        { await handleBroadcastButton(ctx); return; }
+    if (text === '🤖 Avto-Tarqatmalar')      { await handleAutoBroadcastButton(ctx); return; }
     if (text === '📋 Kinolar ro\'yxati')     { await handleListButton(ctx); return; }
     if (text === '🗑️ Kino o\'chirish')       { await handleDeleteButton(ctx); return; }
     if (text === '🔒 Majburiy obuna')        { await handleSubButton(ctx); return; }
