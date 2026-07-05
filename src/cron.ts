@@ -57,4 +57,56 @@ export const setupCronJobs = (bot: Bot) => {
   }, {
     timezone: 'Asia/Tashkent'
   });
+
+  // Nofaol foydalanuvchilarni qaytarish (Har kuni soat 12:00 da)
+  cron.schedule('0 12 * * *', async () => {
+    console.log('⏰ Re-engagement cron triggered!');
+    try {
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+
+      const inactiveUsers = await User.find({
+        lastActivityAt: { $lt: oneDayAgo },
+        $or: [
+          { lastReEngagedAt: null },
+          { lastReEngagedAt: { $exists: false } },
+          { lastReEngagedAt: { $lt: threeDaysAgo } }
+        ]
+      });
+
+      if (inactiveUsers.length === 0) return;
+
+      const { InlineKeyboard } = await import('grammy');
+      
+      const templates = [
+        {
+          text: "Siz uchun eng zo'r yangi kinolarni yuklayapmiz! 🍿 Botimizdagi kinolar sizga yoqyaptimi?",
+          kb: new InlineKeyboard().text("Ha, albatta! 👍", "reengage:yes").text("Yo'q 👎", "reengage:no")
+        },
+        {
+          text: "Ko'pdan beri botga kirmadingiz... 😔 Kino topishda qiynalyapsizmi?",
+          kb: new InlineKeyboard().text("Hammasi tushunarli 👍", "reengage:yes").text("Qiynalyapman 👎", "reengage:no")
+        }
+      ];
+
+      for (const user of inactiveUsers) {
+        const randomTpl = templates[Math.floor(Math.random() * templates.length)];
+        try {
+          await bot.api.sendMessage(user.telegramId, randomTpl.text, { reply_markup: randomTpl.kb });
+          
+          user.lastReEngagedAt = new Date();
+          await user.save();
+        } catch (err) {
+          // ignore block errors
+        }
+        await new Promise(r => setTimeout(r, 50));
+      }
+      
+      console.log(`Re-engagement yakunlandi. Yuborildi: ${inactiveUsers.length}`);
+    } catch (err) {
+      console.error('Re-engagement cron error:', err);
+    }
+  }, {
+    timezone: 'Asia/Tashkent'
+  });
 };

@@ -8,6 +8,8 @@ export interface IUser extends Document {
   joinedAt: Date;
   passedChannels: string[];
   history: { movieCode: string; watchedAt: Date }[];
+  lastActivityAt: Date;
+  lastReEngagedAt?: Date;
 }
 
 const UserSchema: Schema = new Schema({
@@ -20,7 +22,9 @@ const UserSchema: Schema = new Schema({
   history: { 
     type: [{ movieCode: String, watchedAt: { type: Date, default: Date.now } }], 
     default: [] 
-  }
+  },
+  lastActivityAt: { type: Date, default: Date.now },
+  lastReEngagedAt: { type: Date, required: false }
 });
 
 export const User = mongoose.model<IUser>('User', UserSchema);

@@ -174,3 +174,14 @@ userHandler.on('message:text', async (ctx) => {
     await ctx.reply('Kechirasiz, xatolik yuz berdi.');
   }
 });
+
+// ─── RE-ENGAGEMENT HANDLERS ───────────────────────────────────────────────────
+userHandler.callbackQuery('reengage:yes', async (ctx) => {
+  await ctx.answerCallbackQuery('Ajoyib! Fikringiz uchun rahmat 😊');
+  await ctx.editMessageText('Ajoyib! Fikringiz uchun rahmat 😊\n\nKinolarni tomosha qilishda davom eting!');
+});
+
+userHandler.callbackQuery('reengage:no', async (ctx) => {
+  await ctx.answerCallbackQuery('Fikringiz uchun rahmat! Tez orada botni yanada yaxshilaymiz.');
+  await ctx.editMessageText('Fikringiz uchun rahmat! Tez orada botni yanada yaxshilaymiz.\n\nAgar takliflaringiz bo\'lsa bizga yozing!');
+});

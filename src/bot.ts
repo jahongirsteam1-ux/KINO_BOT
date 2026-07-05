@@ -4,6 +4,7 @@ import { connectDB } from './db';
 import { userHandler } from './handlers/user';
 import { adminHandler } from './handlers/admin';
 import { Movie } from './models/Movie';
+import { User } from './models/User';
 
 // Initialize bot
 const token = process.env.BOT_TOKEN;
@@ -103,6 +104,17 @@ bot.on('chat_join_request', async (ctx) => {
 // ─── ROUTING ──────────────────────────────────────────────────────────────────
 // Admin updates go to adminHandler, non-admins go directly to userHandler.
 // After adminHandler finishes, userHandler also runs (so admins can search movies too).
+
+bot.use(async (ctx, next) => {
+  if (ctx.from && !ctx.from.is_bot) {
+    // Orqa fonda foydalanuvchi faolligini yangilab qo'yish
+    User.updateOne(
+      { telegramId: ctx.from.id },
+      { lastActivityAt: new Date() }
+    ).exec().catch(err => console.error('Faollik yangilashda xatolik:', err));
+  }
+  await next();
+});
 
 bot.filter(
   (ctx) => ctx.from !== undefined && getAdminIds().includes(ctx.from.id),
