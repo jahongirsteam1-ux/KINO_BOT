@@ -65,7 +65,8 @@ adminHandler.on('message', async (ctx, next) => {
     }
 
     adminStates.delete(userId);
-    const users = await User.find({});
+    const adminIds = getAdminIds();
+    const users = await User.find({ telegramId: { $nin: adminIds } });
     let sent = 0;
     const failedUsers: any[] = [];
 

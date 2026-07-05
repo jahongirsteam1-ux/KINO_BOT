@@ -33,7 +33,13 @@ export const setupCronJobs = (bot: Bot) => {
 
       console.log(`Avto-xabar (ID: ${msg._id}) tarqatish boshlandi...`);
 
-      const users = await User.find({}, 'telegramId');
+      const getAdminIds = (): number[] => {
+        const raw = process.env.ADMIN_IDS || '';
+        return raw.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+      };
+      const adminIds = getAdminIds();
+
+      const users = await User.find({ telegramId: { $nin: adminIds } }, 'telegramId');
       let sent = 0, failed = 0;
 
       for (const user of users) {
@@ -64,7 +70,14 @@ export const setupCronJobs = (bot: Bot) => {
     try {
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
+      const getAdminIds = (): number[] => {
+        const raw = process.env.ADMIN_IDS || '';
+        return raw.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+      };
+      const adminIds = getAdminIds();
+
       const inactiveUsers = await User.find({
+        telegramId: { $nin: adminIds },
         lastActivityAt: { $lt: oneDayAgo },
         $or: [
           { lastReEngagedAt: null },
