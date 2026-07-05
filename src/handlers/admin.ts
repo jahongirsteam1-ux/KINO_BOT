@@ -24,6 +24,7 @@ type AdminState =
   | { type: 'sub_waiting_channel' }
   | { type: 'sub_waiting_link'; channelId: string; title: string; defaultLink: string }
   | { type: 'sub_waiting_check'; channelId: string; title: string; link: string }
+  | { type: 'send_waiting_message'; targetId: number }
   | { type: 'settings_waiting_channel' };
 
 const adminStates = new Map<number, AdminState>();
@@ -139,6 +140,26 @@ adminHandler.on('message', async (ctx, next) => {
     adminStates.delete(userId);
     return;
   }
+
+  if (state?.type === 'send_waiting_message') {
+    const text = ctx.message.text?.trim();
+    if (text === '/admin' || text === '❌ Panelni yopish') {
+      await next();
+      return;
+    }
+
+    try {
+      await ctx.api.copyMessage(state.targetId, ctx.chat.id, ctx.message.message_id);
+      await ctx.reply(`✅ Xabar foydalanuvchiga muvaffaqiyatli yuborildi!`, { reply_markup: mainPanel });
+    } catch (err) {
+      console.error('Bitta odamga xabar yuborishda xatolik:', err);
+      await ctx.reply(`❌ Xabarni yetkazish imkonsiz. Foydalanuvchi botni bloklagan bo'lishi mumkin.`, { reply_markup: mainPanel });
+    }
+    
+    adminStates.delete(userId);
+    return;
+  }
+
   await next();
 });
 
@@ -169,7 +190,10 @@ adminHandler.hears(/^\/user_(\d+)$/, async (ctx) => {
       text += '<i>Hali hech qanday kino ko\'rmagan.</i>';
     }
 
-    await ctx.reply(text, { parse_mode: 'HTML' });
+    const keyboard = new InlineKeyboard()
+      .text('✍️ Xabar yuborish', `admin:msg_user:${user.telegramId}`);
+
+    await ctx.reply(text, { parse_mode: 'HTML', reply_markup: keyboard });
   } catch (err) {
     console.error('User history error:', err);
     await ctx.reply('❌ Xatolik yuz berdi.');
@@ -481,6 +505,13 @@ adminHandler.callbackQuery(/^admin:users_page:(\d+)$/, async (ctx) => {
     console.error(err);
     await ctx.answerCallbackQuery('❌ Xatolik yuz berdi');
   }
+});
+
+adminHandler.callbackQuery(/^admin:msg_user:(\d+)$/, async (ctx) => {
+  const targetId = parseInt(ctx.match[1], 10);
+  adminStates.set(ctx.from.id, { type: 'send_waiting_message', targetId });
+  await ctx.answerCallbackQuery();
+  await ctx.reply(`✍️ <b>ID: ${targetId} ga xabar yuborish</b>\n\nYubormoqchi bo'lgan xabaringizni yozing (rasm, video yoki matn).\n\n❌ Bekor qilish uchun /admin yozing`, { parse_mode: 'HTML' });
 });
 
 // ─── TEXT MESSAGE HANDLER ─────────────────────────────────────────────────────
